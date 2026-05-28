@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, fmt } from "../lib/api";
+import { REALTIME_TABLES } from "../lib/supabase";
+import { useRealtimeRefetch } from "../context/RealtimeProvider";
 import Modal from "../components/Modal";
 import { PageHeader, KPI, Tag, Spinner, EmptyState, Field } from "../components/primitives";
 import Icon from "../components/Icon";
@@ -23,21 +25,30 @@ export default function Sales() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadMeta = useCallback(() => {
     api.suppliers().then(setSuppliers).catch(console.error);
     api.salesStats().then(setStats).catch(console.error);
   }, []);
 
-  useEffect(() => {
-    setLoading(true);
+  const loadSales = useCallback(({ silent } = {}) => {
+    if (!silent) setLoading(true);
     const params = {};
     if (filter.supplier_id) params.supplier_id = filter.supplier_id;
     if (filter.estado_pago) params.estado_pago = filter.estado_pago;
-    api.sales(params)
+    return api.sales(params)
       .then(setSales)
       .catch(console.error)
-      .finally(() => setLoading(false));
+      .finally(() => { if (!silent) setLoading(false); });
   }, [filter]);
+
+  const loadAll = useCallback((opts) => {
+    loadMeta();
+    loadSales(opts);
+  }, [loadMeta, loadSales]);
+
+  useEffect(() => { loadMeta(); }, [loadMeta]);
+  useEffect(() => { loadSales(); }, [loadSales]);
+  useRealtimeRefetch(loadAll, REALTIME_TABLES.sales);
 
   async function handleCreate(e) {
     e.preventDefault();

@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, fmt, fmtDate } from "../lib/api";
+import { REALTIME_TABLES } from "../lib/supabase";
+import { useRealtimeRefetch } from "../context/RealtimeProvider";
 import Modal from "../components/Modal";
 import { Tag, Spinner, EmptyState, Field } from "../components/primitives";
 import Icon from "../components/Icon";
@@ -12,8 +14,9 @@ export default function ClientDetail() {
   const [form, setForm] = useState({ monto: "", referencia: "", observacion: "", medio_pago: "efectivo" });
   const [saving, setSaving] = useState(false);
 
-  const load = () => api.client(codigo).then(setClient).catch(console.error);
-  useEffect(() => { load(); }, [codigo]);
+  const load = useCallback(() => api.client(codigo).then(setClient).catch(console.error), [codigo]);
+  useEffect(() => { load(); }, [load]);
+  useRealtimeRefetch(load, REALTIME_TABLES.clientDetail);
 
   if (!client) {
     return (

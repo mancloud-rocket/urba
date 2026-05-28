@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { useRealtimeStatus } from "../context/RealtimeProvider";
 import { LogoMark } from "./Logo";
 import Icon from "./Icon";
 import { Kbd } from "./primitives";
@@ -67,6 +68,38 @@ function Sidebar() {
   );
 }
 
+function LiveIndicator() {
+  const status = useRealtimeStatus();
+  if (status === "off") return null;
+
+  const label =
+    status === "live" ? "En vivo" :
+    status === "connecting" ? "Conectando..." :
+    "Sin sync";
+
+  const color =
+    status === "live" ? "rgb(var(--rgb-positive))" :
+    status === "connecting" ? "rgb(var(--rgb-accent))" :
+    "rgb(var(--rgb-text-quaternary))";
+
+  return (
+    <span
+      className="hidden sm:inline-flex items-center gap-1.5 text-[10px] font-medium text-text-tertiary px-2 py-1 rounded-lg"
+      style={{ background: "rgb(var(--rgb-border-subtle) / 0.04)" }}
+      title="Supabase Realtime: el panel se actualiza cuando cambian los datos"
+    >
+      <span
+        className="w-1.5 h-1.5 rounded-full shrink-0"
+        style={{
+          background: color,
+          boxShadow: status === "live" ? `0 0 6px ${color}` : undefined,
+        }}
+      />
+      {label}
+    </span>
+  );
+}
+
 function Topbar({ onOpenSearch }) {
   const location = useLocation();
   const current = NAV.find(
@@ -105,6 +138,7 @@ function Topbar({ onOpenSearch }) {
       </div>
 
       <div className="flex items-center gap-1.5 ml-auto">
+        <LiveIndicator />
         <button type="button" className="btn-ghost h-8 w-8 p-0 rounded-lg" aria-label="Notificaciones">
           <Icon name="bell" size={15} />
         </button>

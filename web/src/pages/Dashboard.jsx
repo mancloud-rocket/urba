@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, fmt, fmtDate } from "../lib/api";
+import { REALTIME_TABLES } from "../lib/supabase";
+import { useRealtimeRefetch } from "../context/RealtimeProvider";
 import { PageHeader, KPI, Tag, Spinner, EmptyState, Divider } from "../components/primitives";
 import Icon from "../components/Icon";
 import Sparkline from "../components/Sparkline";
@@ -9,12 +11,16 @@ export default function Dashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    api.dashboard()
+  const load = useCallback(({ silent } = {}) => {
+    if (!silent) setLoading(true);
+    return api.dashboard()
       .then(setData)
       .catch(console.error)
-      .finally(() => setLoading(false));
+      .finally(() => { if (!silent) setLoading(false); });
   }, []);
+
+  useEffect(() => { load(); }, [load]);
+  useRealtimeRefetch(load, REALTIME_TABLES.dashboard);
 
   if (loading) {
     return (

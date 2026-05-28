@@ -130,3 +130,19 @@ CREATE POLICY "authenticated_all" ON suppliers FOR ALL TO authenticated USING (t
 CREATE POLICY "authenticated_all" ON audit_log FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "authenticated_all" ON allowed_phones FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "authenticated_all" ON pending_confirmations FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- Realtime (frontend escucha cambios y refresca via API)
+ALTER TABLE clients REPLICA IDENTITY FULL;
+ALTER TABLE ledger_entries REPLICA IDENTITY FULL;
+ALTER TABLE sales_lines REPLICA IDENTITY FULL;
+ALTER TABLE suppliers REPLICA IDENTITY FULL;
+
+ALTER PUBLICATION supabase_realtime ADD TABLE clients;
+ALTER PUBLICATION supabase_realtime ADD TABLE ledger_entries;
+ALTER PUBLICATION supabase_realtime ADD TABLE sales_lines;
+ALTER PUBLICATION supabase_realtime ADD TABLE suppliers;
+
+CREATE POLICY "anon_select_clients" ON clients FOR SELECT TO anon USING (true);
+CREATE POLICY "anon_select_ledger" ON ledger_entries FOR SELECT TO anon USING (true);
+CREATE POLICY "anon_select_sales" ON sales_lines FOR SELECT TO anon USING (true);
+CREATE POLICY "anon_select_suppliers" ON suppliers FOR SELECT TO anon USING (true);

@@ -180,10 +180,20 @@ Si `db` dice `sqlite`, falta `DATABASE_URL` en Render.
 | Variable | Valor |
 |----------|-------|
 | `VITE_API_URL` | `https://urba-api.onrender.com` (sin barra final) |
+| `VITE_SUPABASE_URL` | `https://TU_REF.supabase.co` (Project Settings > API) |
+| `VITE_SUPABASE_ANON_KEY` | `anon` / `publishable` key (Project Settings > API) |
 
 **Deploy.** URL resultante, ej: `https://urba.vercel.app`
 
-### 4.3 Verificar web
+### 4.3 Habilitar Realtime en Supabase
+
+Si el proyecto ya existia antes de este cambio, ejecuta en **SQL Editor** el archivo [`supabase/realtime.sql`](supabase/realtime.sql).
+
+Luego en Supabase → **Database** → **Replication** verifica que `clients`, `ledger_entries`, `sales_lines` y `suppliers` esten en la publicacion `supabase_realtime`.
+
+En la web deberias ver el indicador **En vivo** (punto verde) en la barra superior.
+
+### 4.4 Verificar web
 
 Abri la URL de Vercel. El panel debe cargar clientes y datos de Supabase.
 

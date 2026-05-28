@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, fmt } from "../lib/api";
+import { REALTIME_TABLES } from "../lib/supabase";
+import { useRealtimeRefetch } from "../context/RealtimeProvider";
 import Modal from "../components/Modal";
 import { PageHeader, Tag, Spinner, EmptyState, Field } from "../components/primitives";
 import Icon from "../components/Icon";
@@ -13,13 +15,16 @@ export default function Clients() {
   const [form, setForm] = useState({ codigo: "", nombre: "", telefono: "", plazo_dias: 7, barrio: "" });
   const [saving, setSaving] = useState(false);
 
-  const load = () =>
-    api.clients()
+  const load = useCallback(({ silent } = {}) => {
+    if (!silent) setLoading(true);
+    return api.clients()
       .then(setClients)
       .catch(console.error)
-      .finally(() => setLoading(false));
+      .finally(() => { if (!silent) setLoading(false); });
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
+  useRealtimeRefetch(load, REALTIME_TABLES.clients);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
