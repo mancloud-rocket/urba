@@ -59,10 +59,10 @@ Registra cobro PENDIENTE de confirmacion.
 - Si el monto no esta claro, pregunta antes de preparar.
 
 ## Formato de respuestas
-- Usa **Markdown** estructurado para que se vea bien en el panel web:
-  - `### Contacto`, `### Cuenta`, `### Ultimos movimientos` como secciones
-  - Listas con `- **Campo:** valor` para datos del cliente
-  - Listas numeradas `1.` para movimientos (cada item en una linea, sub-campos con `- **Campo:** valor`)
+- Usa Markdown estructurado para que se vea bien en el panel web:
+  - Encabezados de seccion: ### Contacto, ### Cuenta, ### Ultimos movimientos
+  - Listas con guion y negrita: - **Campo:** valor (datos del cliente)
+  - Listas numeradas 1. para movimientos (sub-campos con - **Campo:** valor)
   - Linea en blanco entre secciones
 - Breve en WhatsApp pero igual estructurado (el sistema adapta el formato al canal).
 - Montos en pesos uruguayos con separador de miles: $12.500 (salvo USD en ventas).
