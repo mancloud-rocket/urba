@@ -3,6 +3,7 @@ import { api } from "../lib/api";
 import { PageHeader, Spinner, Kbd } from "../components/primitives";
 import { LogoMark } from "../components/Logo";
 import Icon from "../components/Icon";
+import MarkdownMessage from "../components/MarkdownMessage";
 
 const SUGGESTIONS = [
   { icon: "users", text: "¿Cuánto debe Andrés?" },
@@ -106,7 +107,7 @@ export default function Agent() {
               className={`flex animate-slide-in-right ${m.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[85%] px-3.5 py-2.5 text-body leading-relaxed rounded-xl ${
+                className={`max-w-[90%] px-3.5 py-2.5 text-body leading-relaxed rounded-xl ${
                   m.role === "user"
                     ? "bg-accent text-white rounded-br-sm font-medium"
                     : "text-text-primary rounded-bl-sm"
@@ -120,7 +121,11 @@ export default function Agent() {
                     : undefined
                 }
               >
-                {m.text}
+                {m.role === "assistant" ? (
+                  <MarkdownMessage content={m.text} />
+                ) : (
+                  m.text
+                )}
               </div>
             </div>
           ))}

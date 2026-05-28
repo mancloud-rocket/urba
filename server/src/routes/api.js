@@ -22,6 +22,7 @@ import {
   inboundTypeLabel,
   sendWhatsApp,
 } from "../services/whatsapp.js";
+import { markdownToWhatsApp } from "../services/format-reply.js";
 
 const router = express.Router();
 
@@ -134,7 +135,7 @@ router.post("/whatsapp/webhook", async (req, res) => {
     }
 
     const reply = await processAgentMessage(from, text);
-    const sent = await sendWhatsApp(from, reply);
+    const sent = await sendWhatsApp(from, markdownToWhatsApp(reply));
     if (!sent.ok) {
       console.error("No se pudo enviar respuesta WA a", from, sent.error);
     }
