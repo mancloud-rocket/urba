@@ -46,16 +46,9 @@ La base SQLite se crea y carga sola al iniciar el servidor (`server/data/balde.d
 
 ## WhatsApp (Meta Cloud API)
 
-Variables en `server/.env`:
+Guia completa: **[WHATSAPP.md](WHATSAPP.md)**
 
-```
-WHATSAPP_VERIFY_TOKEN=balde-verify
-WHATSAPP_ACCESS_TOKEN=tu_token
-WHATSAPP_PHONE_NUMBER_ID=tu_phone_id
-ALLOWED_PHONES=59899123456,59899234567
-```
-
-Webhook URL: `https://tu-dominio/api/whatsapp/webhook`
+Webhook URL: `https://tu-api.onrender.com/api/whatsapp/webhook`
 
 Escrituras por WhatsApp requieren confirmacion: el agente responde un resumen y el usuario debe escribir **SI**.
 

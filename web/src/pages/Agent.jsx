@@ -5,10 +5,10 @@ import { LogoMark } from "../components/Logo";
 import Icon from "../components/Icon";
 
 const SUGGESTIONS = [
-  { icon: "users", text: "¿Cuánto debe C01?" },
+  { icon: "users", text: "¿Cuánto debe Andrés?" },
+  { icon: "users", text: "Datos de Franco del Bove" },
   { icon: "trending", text: "¿Quién está vencido?" },
-  { icon: "panel", text: "Resumen de cartera" },
-  { icon: "bag", text: "Ventas pendientes de cobro" },
+  { icon: "panel", text: "¿Quiénes deben plata?" },
 ];
 
 function TypingDots() {

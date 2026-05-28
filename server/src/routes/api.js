@@ -17,6 +17,11 @@ import {
   createSaleLine,
 } from "../services/mutations.js";
 import { processAgentMessage } from "../services/openai-agent.js";
+import {
+  extractInboundText,
+  inboundTypeLabel,
+  sendWhatsApp,
+} from "../services/whatsapp.js";
 
 const router = express.Router();
 
@@ -108,41 +113,34 @@ router.post("/whatsapp/webhook", async (req, res) => {
     const entry = req.body?.entry?.[0];
     const change = entry?.changes?.[0];
     const msg = change?.value?.messages?.[0];
-    if (!msg?.text?.body) return;
+    if (!msg) return;
 
     const from = msg.from.replace(/\D/g, "");
+    const text = extractInboundText(msg);
+
+    if (!text) {
+      if (await isPhoneAllowed(from)) {
+        await sendWhatsApp(
+          from,
+          `URBA solo procesa mensajes de texto por ahora (recibi ${inboundTypeLabel(msg)}).`
+        );
+      }
+      return;
+    }
+
     if (!(await isPhoneAllowed(from))) {
       await sendWhatsApp(from, "Numero no autorizado en URBA.");
       return;
     }
 
-    const reply = await processAgentMessage(from, msg.text.body);
-    await sendWhatsApp(from, reply);
+    const reply = await processAgentMessage(from, text);
+    const sent = await sendWhatsApp(from, reply);
+    if (!sent.ok) {
+      console.error("No se pudo enviar respuesta WA a", from, sent.error);
+    }
   } catch (e) {
     console.error("WhatsApp webhook error:", e);
   }
 });
-
-async function sendWhatsApp(to, text) {
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-  if (!token || !phoneId) {
-    console.log(`[WA demo -> ${to}]: ${text}`);
-    return;
-  }
-  await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to,
-      type: "text",
-      text: { body: text },
-    }),
-  });
-}
 
 export default router;
