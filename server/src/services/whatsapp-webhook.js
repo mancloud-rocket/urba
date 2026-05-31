@@ -25,16 +25,12 @@ function isSelfChat(body, key) {
   return chatPeers.some((peer) => peer === owner);
 }
 
-function resolveSenderPhone(body, item, key) {
-  const remoteJid = key.remoteJid || "";
-  if (key.fromMe) {
-    return ownerPhone(body) || jidToPhone(remoteJid);
-  }
-  return (
-    jidToPhone(key.senderPn) ||
-    jidToPhone(item.senderPn) ||
-    jidToPhone(remoteJid)
-  );
+function isCommandChannel(body, key) {
+  return key.fromMe && isSelfChat(body, key);
+}
+
+function resolveSenderPhone(body, key) {
+  return ownerPhone(body) || jidToPhone(key.remoteJid);
 }
 
 const UPSERT_EVENTS = new Set(["messages.upsert"]);
@@ -126,10 +122,11 @@ export async function handleWhatsAppWebhookPost(req, res) {
         continue;
       }
 
-      if (key.fromMe && !isSelfChat(req.body, key)) {
+      if (!isCommandChannel(req.body, key)) {
         log.debug("whatsapp", "webhook.ignored", {
-          reason: "from_me_other_chat",
+          reason: key.fromMe ? "from_me_other_chat" : "incoming_not_self_chat",
           message_id: messageId,
+          from_me: key.fromMe,
           remote_jid: remoteJid,
         });
         continue;
@@ -143,26 +140,24 @@ export async function handleWhatsAppWebhookPost(req, res) {
         continue;
       }
 
-      const from = resolveSenderPhone(req.body, item, key);
+      const from = resolveSenderPhone(req.body, key);
 
       if (!from) {
-        log.warn("whatsapp", "webhook.no_sender", { remote_jid: remoteJid, from_me: key.fromMe });
+        log.warn("whatsapp", "webhook.no_sender", { remote_jid: remoteJid });
         continue;
       }
 
-      if (key.fromMe) {
-        log.info("whatsapp", "message.from_me", {
-          message_id: messageId,
-          from: maskPhone(from),
-          remote_jid: remoteJid,
-        });
-      }
+      log.info("whatsapp", "message.self_chat_command", {
+        message_id: messageId,
+        from: maskPhone(from),
+        remote_jid: remoteJid,
+      });
 
       const message = item.message || {};
       const text = extractInboundText(message);
       const typeLabel = inboundTypeLabel(message);
 
-      if (key.fromMe && text && isBotReplyFingerprint(from, text)) {
+      if (text && isBotReplyFingerprint(from, text)) {
         log.debug("whatsapp", "webhook.ignored", {
           reason: "bot_echo_fingerprint",
           message_id: messageId,
