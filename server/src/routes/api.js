@@ -18,11 +18,10 @@ import {
 } from "../services/mutations.js";
 import { processAgentMessage } from "../services/openai-agent.js";
 import {
-  extractInboundText,
-  inboundTypeLabel,
-  sendWhatsApp,
-} from "../services/whatsapp.js";
-import { markdownToWhatsApp } from "../services/format-reply.js";
+  handleWhatsAppWebhookVerify,
+  handleWhatsAppWebhookPost,
+} from "../services/whatsapp-webhook.js";
+import { log, truncate, maskPhone } from "../services/logger.js";
 
 const router = express.Router();
 
@@ -94,54 +93,36 @@ router.get("/config/phones", async (_req, res) => {
 router.post("/chat", async (req, res) => {
   const { message, telefono = "web-demo" } = req.body;
   if (!message) return res.status(400).json({ error: "message requerido" });
-  const reply = await processAgentMessage(telefono, message);
-  res.json({ reply });
-});
 
-router.get("/whatsapp/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-  if (mode === "subscribe" && token === process.env.WHATSAPP_VERIFY_TOKEN) {
-    return res.status(200).send(challenge);
-  }
-  return res.sendStatus(403);
-});
+  log.info("agent", "chat.request", {
+    channel: "web",
+    telefono: maskPhone(telefono),
+    input_preview: truncate(message, 200),
+  });
 
-router.post("/whatsapp/webhook", async (req, res) => {
-  res.sendStatus(200);
+  const started = Date.now();
   try {
-    const entry = req.body?.entry?.[0];
-    const change = entry?.changes?.[0];
-    const msg = change?.value?.messages?.[0];
-    if (!msg) return;
-
-    const from = msg.from.replace(/\D/g, "");
-    const text = extractInboundText(msg);
-
-    if (!text) {
-      if (await isPhoneAllowed(from)) {
-        await sendWhatsApp(
-          from,
-          `URBA solo procesa mensajes de texto por ahora (recibi ${inboundTypeLabel(msg)}).`
-        );
-      }
-      return;
-    }
-
-    if (!(await isPhoneAllowed(from))) {
-      await sendWhatsApp(from, "Numero no autorizado en URBA.");
-      return;
-    }
-
-    const reply = await processAgentMessage(from, text);
-    const sent = await sendWhatsApp(from, markdownToWhatsApp(reply));
-    if (!sent.ok) {
-      console.error("No se pudo enviar respuesta WA a", from, sent.error);
-    }
+    const reply = await processAgentMessage(telefono, message, { channel: "web" });
+    log.info("agent", "chat.response", {
+      channel: "web",
+      telefono: maskPhone(telefono),
+      duration_ms: Date.now() - started,
+      reply_preview: truncate(reply, 200),
+    });
+    res.json({ reply });
   } catch (e) {
-    console.error("WhatsApp webhook error:", e);
+    log.error("agent", "chat.error", {
+      channel: "web",
+      telefono: maskPhone(telefono),
+      error: e.message,
+      duration_ms: Date.now() - started,
+    });
+    res.status(500).json({ error: "Error interno del agente" });
   }
 });
+
+router.get("/whatsapp/webhook", handleWhatsAppWebhookVerify);
+
+router.post("/whatsapp/webhook", handleWhatsAppWebhookPost);
 
 export default router;
