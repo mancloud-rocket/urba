@@ -5,18 +5,30 @@ import {
   jidToPhone,
   summarizeWebhookPayload,
 } from "./whatsapp.js";
-import { isBotMessageSent } from "./whatsapp-sent-cache.js";
+import { isBotMessageSent, isBotReplyFingerprint } from "./whatsapp-sent-cache.js";
 import { log, truncate, maskPhone } from "./logger.js";
+
+function ownerPhone(body) {
+  return jidToPhone(body?.sender);
+}
+
+function isSelfChat(body, key) {
+  const owner = ownerPhone(body);
+  if (!owner) return false;
+
+  const chatPeers = [
+    jidToPhone(key.remoteJid),
+    jidToPhone(key.remoteJidAlt),
+    jidToPhone(key.participant),
+  ].filter(Boolean);
+
+  return chatPeers.some((peer) => peer === owner);
+}
 
 function resolveSenderPhone(body, item, key) {
   const remoteJid = key.remoteJid || "";
   if (key.fromMe) {
-    return (
-      jidToPhone(body?.sender) ||
-      jidToPhone(key.senderPn) ||
-      jidToPhone(item.senderPn) ||
-      jidToPhone(remoteJid)
-    );
+    return ownerPhone(body) || jidToPhone(remoteJid);
   }
   return (
     jidToPhone(key.senderPn) ||
@@ -104,6 +116,7 @@ export async function handleWhatsAppWebhookPost(req, res) {
     for (const item of items) {
       const key = item.key || {};
       const messageId = key.id || `evo_${Date.now()}`;
+      const remoteJid = key.remoteJid || "";
 
       if (key.fromMe && isBotMessageSent(messageId)) {
         log.debug("whatsapp", "webhook.ignored", {
@@ -113,7 +126,15 @@ export async function handleWhatsAppWebhookPost(req, res) {
         continue;
       }
 
-      const remoteJid = key.remoteJid || "";
+      if (key.fromMe && !isSelfChat(req.body, key)) {
+        log.debug("whatsapp", "webhook.ignored", {
+          reason: "from_me_other_chat",
+          message_id: messageId,
+          remote_jid: remoteJid,
+        });
+        continue;
+      }
+
       if (remoteJid.endsWith("@g.us") || remoteJid.endsWith("@broadcast")) {
         log.debug("whatsapp", "webhook.ignored", {
           reason: "group_or_broadcast",
@@ -140,6 +161,14 @@ export async function handleWhatsAppWebhookPost(req, res) {
       const message = item.message || {};
       const text = extractInboundText(message);
       const typeLabel = inboundTypeLabel(message);
+
+      if (key.fromMe && text && isBotReplyFingerprint(from, text)) {
+        log.debug("whatsapp", "webhook.ignored", {
+          reason: "bot_echo_fingerprint",
+          message_id: messageId,
+        });
+        continue;
+      }
 
       await handleInboundWhatsAppMessage({
         from,

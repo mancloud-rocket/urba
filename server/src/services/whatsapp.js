@@ -1,5 +1,5 @@
 import { log, truncate, maskPhone } from "./logger.js";
-import { markBotMessageSent } from "./whatsapp-sent-cache.js";
+import { markBotMessageSent, markBotReplyFingerprint, extractSentMessageIds } from "./whatsapp-sent-cache.js";
 
 const WA_MAX_LEN = 4096;
 
@@ -53,13 +53,16 @@ export async function sendWhatsApp(to, text, meta = {}) {
     if (!last.ok) return last;
   }
 
-  const waMessageId = last?.data?.key?.id;
-  if (waMessageId) markBotMessageSent(waMessageId);
+  const fullText = chunks.join("");
+  for (const id of extractSentMessageIds(last?.data)) {
+    markBotMessageSent(id);
+  }
+  markBotReplyFingerprint(dest, fullText);
 
   log.info("whatsapp", "send.ok", {
     to: maskPhone(dest),
     chunks: chunks.length,
-    wa_message_id: waMessageId,
+    wa_message_id: extractSentMessageIds(last?.data)[0] || null,
     ...meta,
   });
 
