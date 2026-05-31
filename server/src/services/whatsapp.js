@@ -131,3 +131,40 @@ async function sendWhatsAppChunk(to, body, token, phoneId, chunkIndex, chunkTota
 
   return { ok: true, data };
 }
+
+export async function verifyWhatsAppCredentials() {
+  const token = process.env.WHATSAPP_ACCESS_TOKEN;
+  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+  if (!token || !phoneId) {
+    return { ok: false, reason: "missing_env" };
+  }
+
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v21.0/${phoneId}?fields=display_phone_number,verified_name`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      return {
+        ok: false,
+        http_status: res.status,
+        phone_number_id: phoneId,
+        error: data?.error?.message || "Graph API error",
+        code: data?.error?.code,
+        error_subcode: data?.error?.error_subcode,
+      };
+    }
+
+    return {
+      ok: true,
+      phone_number_id: phoneId,
+      display_phone_number: data.display_phone_number,
+      verified_name: data.verified_name,
+    };
+  } catch (e) {
+    return { ok: false, reason: "network", error: e.message };
+  }
+}

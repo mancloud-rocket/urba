@@ -21,6 +21,7 @@ import {
   handleWhatsAppWebhookVerify,
   handleWhatsAppWebhookPost,
 } from "../services/whatsapp-webhook.js";
+import { verifyWhatsAppCredentials } from "../services/whatsapp.js";
 import { log, truncate, maskPhone } from "../services/logger.js";
 
 const router = express.Router();
@@ -125,18 +126,28 @@ router.get("/whatsapp/webhook", handleWhatsAppWebhookVerify);
 
 router.post("/whatsapp/webhook", handleWhatsAppWebhookPost);
 
-router.get("/whatsapp/diagnostic", (_req, res) => {
+router.get("/whatsapp/diagnostic", async (_req, res) => {
   const renderUrl = process.env.RENDER_EXTERNAL_URL;
-  log.info("whatsapp", "diagnostic.ping", { render_url: renderUrl });
+  const waCheck = await verifyWhatsAppCredentials();
+
+  log.info("whatsapp", "diagnostic.ping", {
+    render_url: renderUrl,
+    graph_api_ok: waCheck.ok,
+  });
+
   res.json({
-    ok: true,
+    ok: waCheck.ok,
+    note: "ok=true solo si token y Phone Number ID son validos en Meta Graph API",
     webhook_path: "/api/whatsapp/webhook",
-    webhook_url: renderUrl ? `${renderUrl}/api/whatsapp/webhook` : "set RENDER_EXTERNAL_URL or check Render dashboard",
+    webhook_url: renderUrl
+      ? `${renderUrl}/api/whatsapp/webhook`
+      : "set RENDER_EXTERNAL_URL or check Render dashboard",
     whatsapp_token_set: Boolean(process.env.WHATSAPP_ACCESS_TOKEN),
     phone_id_set: Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID),
     verify_token_set: Boolean(process.env.WHATSAPP_VERIFY_TOKEN),
     openai_set: Boolean(process.env.OPENAI_API_KEY),
     db: process.env.SUPABASE_DB_HOST ? "postgres" : "sqlite",
+    graph_api: waCheck,
   });
 });
 
