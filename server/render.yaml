@@ -11,13 +11,23 @@ services:
         value: production
       - key: DATABASE_URL
         sync: false
+      - key: SUPABASE_DB_HOST
+        sync: false
+      - key: SUPABASE_DB_PORT
+        sync: false
+      - key: SUPABASE_DB_USER
+        sync: false
+      - key: SUPABASE_DB_PASSWORD
+        sync: false
+      - key: SUPABASE_DB_NAME
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
-      - key: WHATSAPP_VERIFY_TOKEN
+      - key: EVOLUTION_API_URL
         sync: false
-      - key: WHATSAPP_ACCESS_TOKEN
+      - key: EVOLUTION_API_KEY
         sync: false
-      - key: WHATSAPP_PHONE_NUMBER_ID
+      - key: EVOLUTION_INSTANCE
         sync: false
       - key: ALLOWED_PHONES
         sync: false

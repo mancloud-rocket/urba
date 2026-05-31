@@ -44,11 +44,13 @@ npm run dev
 
 La base SQLite se crea y carga sola al iniciar el servidor (`server/data/balde.db`).
 
-## WhatsApp (Meta Cloud API)
+## WhatsApp (Evolution API)
 
-Guia completa: **[WHATSAPP.md](WHATSAPP.md)**
+Evolution corre aparte (local con Docker o VPS). URBA recibe webhooks en:
 
-Webhook URL: `https://tu-api.onrender.com/api/whatsapp/webhook`
+`https://tu-api.onrender.com/api/whatsapp/webhook`
+
+Setup local: carpeta [`evolution/`](evolution/) (`docker compose` + `setup.ps1`).
 
 Escrituras por WhatsApp requieren confirmacion: el agente responde un resumen y el usuario debe escribir **SI**.
 
@@ -61,7 +63,7 @@ Resumen:
 1. Crear proyecto Supabase y ejecutar [`supabase/schema.sql`](supabase/schema.sql)
 2. `DATABASE_URL` en `server/.env` → `npm run seed --prefix server`
 3. Deploy API en Render + web en Vercel
-4. Webhook WhatsApp Meta apuntando a `/api/whatsapp/webhook`
+4. Evolution API con webhook apuntando a `/api/whatsapp/webhook`
 
 Sin `DATABASE_URL` el server usa SQLite local automaticamente.
 

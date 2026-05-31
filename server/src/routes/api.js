@@ -18,7 +18,7 @@ import {
 } from "../services/mutations.js";
 import { processAgentMessage } from "../services/openai-agent.js";
 import {
-  handleWhatsAppWebhookVerify,
+  handleWhatsAppWebhookGet,
   handleWhatsAppWebhookPost,
 } from "../services/whatsapp-webhook.js";
 import { verifyWhatsAppCredentials } from "../services/whatsapp.js";
@@ -122,8 +122,7 @@ router.post("/chat", async (req, res) => {
   }
 });
 
-router.get("/whatsapp/webhook", handleWhatsAppWebhookVerify);
-
+router.get("/whatsapp/webhook", handleWhatsAppWebhookGet);
 router.post("/whatsapp/webhook", handleWhatsAppWebhookPost);
 
 router.get("/whatsapp/diagnostic", async (_req, res) => {
@@ -132,22 +131,22 @@ router.get("/whatsapp/diagnostic", async (_req, res) => {
 
   log.info("whatsapp", "diagnostic.ping", {
     render_url: renderUrl,
-    graph_api_ok: waCheck.ok,
+    evolution_ok: waCheck.ok,
   });
 
   res.json({
     ok: waCheck.ok,
-    note: "ok=true solo si token y Phone Number ID son validos en Meta Graph API",
+    note: "ok=true si Evolution esta conectada (state=open)",
     webhook_path: "/api/whatsapp/webhook",
     webhook_url: renderUrl
       ? `${renderUrl}/api/whatsapp/webhook`
       : "set RENDER_EXTERNAL_URL or check Render dashboard",
-    whatsapp_token_set: Boolean(process.env.WHATSAPP_ACCESS_TOKEN),
-    phone_id_set: Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID),
-    verify_token_set: Boolean(process.env.WHATSAPP_VERIFY_TOKEN),
+    evolution_url_set: Boolean(process.env.EVOLUTION_API_URL),
+    evolution_key_set: Boolean(process.env.EVOLUTION_API_KEY),
+    evolution_instance_set: Boolean(process.env.EVOLUTION_INSTANCE),
     openai_set: Boolean(process.env.OPENAI_API_KEY),
     db: process.env.SUPABASE_DB_HOST ? "postgres" : "sqlite",
-    graph_api: waCheck,
+    evolution: waCheck,
   });
 });
 

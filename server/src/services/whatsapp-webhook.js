@@ -1,35 +1,61 @@
+import { handleInboundWhatsAppMessage } from "./whatsapp-inbound.js";
 import {
   extractInboundText,
   inboundTypeLabel,
-  sendWhatsApp,
-} from "../services/whatsapp.js";
-import { markdownToWhatsApp } from "../services/format-reply.js";
-import { processAgentMessage } from "../services/openai-agent.js";
-import { isPhoneAllowed } from "../services/queries.js";
-import { log, summarizeWebhookPayload, truncate, maskPhone } from "../services/logger.js";
+  jidToPhone,
+  summarizeWebhookPayload,
+} from "./whatsapp.js";
+import { log, truncate } from "./logger.js";
 
-export function handleWhatsAppWebhookVerify(req, res) {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
+const UPSERT_EVENTS = new Set(["messages.upsert"]);
 
-  log.info("whatsapp", "webhook.verify_attempt", {
-    mode,
-    token_match: token === process.env.WHATSAPP_VERIFY_TOKEN,
-    has_challenge: Boolean(challenge),
-  });
+function isUpsertEvent(event) {
+  return UPSERT_EVENTS.has(String(event || "").toLowerCase().replace(/_/g, "."));
+}
 
-  if (mode === "subscribe" && token === process.env.WHATSAPP_VERIFY_TOKEN) {
-    log.info("whatsapp", "webhook.verify_ok", { mode });
-    return res.status(200).send(challenge);
+function webhookAuthorized(req) {
+  const secret = process.env.EVOLUTION_WEBHOOK_SECRET;
+  if (!secret) return true;
+  const headerKey = req.get("apikey") || req.get("x-evolution-api-key");
+  return headerKey === secret;
+}
+
+function normalizeWebhookData(body) {
+  const data = body?.data;
+  if (!data) return [];
+
+  if (Array.isArray(data.messages)) {
+    return data.messages.map((item) => ({
+      key: item.key,
+      message: item.message,
+      messageType: item.messageType,
+      pushName: item.pushName,
+      senderPn: item.senderPn,
+    }));
   }
 
-  log.warn("whatsapp", "webhook.verify_rejected", { mode, reason: "token_or_mode_invalid" });
-  return res.sendStatus(403);
+  if (data.key || data.message) {
+    return [data];
+  }
+
+  return [];
+}
+
+export function handleWhatsAppWebhookGet(_req, res) {
+  res.json({
+    ok: true,
+    provider: "evolution",
+    note: "Configurar webhook POST en la instancia Evolution apuntando a esta URL",
+  });
 }
 
 export async function handleWhatsAppWebhookPost(req, res) {
   const receivedAt = Date.now();
+
+  if (!webhookAuthorized(req)) {
+    log.warn("whatsapp", "webhook.rejected", { reason: "invalid_secret" });
+    return res.sendStatus(403);
+  }
 
   log.info("whatsapp", "webhook.post_hit", {
     has_body: Boolean(req.body),
@@ -42,128 +68,61 @@ export async function handleWhatsAppWebhookPost(req, res) {
   res.sendStatus(200);
 
   try {
-    const entry = req.body?.entry?.[0];
-    const change = entry?.changes?.[0];
-    const value = change?.value;
-
-    if (!entry || !change) {
-      log.debug("whatsapp", "webhook.ignored", { reason: "empty_entry_or_change" });
-      return;
-    }
-
-    if (value?.statuses?.length) {
-      for (const st of value.statuses) {
-        log.info("whatsapp", "message.status", {
-          message_id: st.id,
-          status: st.status,
-          recipient: maskPhone(st.recipient_id),
-          recipient_raw: st.recipient_id,
-          timestamp: st.timestamp,
-          errors: st.errors,
-        });
-      }
-    }
-
-    const msg = value?.messages?.[0];
-    if (!msg) {
-      if (!value?.statuses?.length) {
-        log.debug("whatsapp", "webhook.no_message", {
-          field: change.field,
-          keys: value ? Object.keys(value) : [],
-        });
-      }
-      return;
-    }
-
-    const from = msg.from.replace(/\D/g, "");
-    const text = extractInboundText(msg);
-    const allowed = await isPhoneAllowed(from);
-
-    log.info("whatsapp", "message.inbound", {
-      message_id: msg.id,
-      from: maskPhone(from),
-      from_raw: from,
-      type: msg.type,
-      allowed,
-      text_preview: text ? truncate(text, 200) : null,
-      text_length: text?.length ?? 0,
-      timestamp: msg.timestamp,
-    });
-
-    if (!text) {
-      log.info("whatsapp", "message.unsupported_type", {
-        from: maskPhone(from),
-        type: msg.type,
-        label: inboundTypeLabel(msg),
-        allowed,
+    const event = req.body?.event;
+    if (!isUpsertEvent(event)) {
+      log.debug("whatsapp", "webhook.ignored", {
+        event,
+        reason: "not_messages_upsert",
       });
-      if (allowed) {
-        const notice = `URBA solo procesa mensajes de texto por ahora (recibi ${inboundTypeLabel(msg)}).`;
-        await sendWhatsApp(from, notice, { inbound_message_id: msg.id });
-      } else {
-        log.warn("whatsapp", "message.rejected_unauthorized", {
-          from: maskPhone(from),
-          reason: "unsupported_type_and_not_allowed",
+      return;
+    }
+
+    const items = normalizeWebhookData(req.body);
+    if (!items.length) {
+      log.debug("whatsapp", "webhook.ignored", { reason: "empty_data" });
+      return;
+    }
+
+    for (const item of items) {
+      const key = item.key || {};
+      if (key.fromMe) {
+        log.debug("whatsapp", "webhook.ignored", {
+          reason: "from_me",
+          message_id: key.id,
         });
+        continue;
       }
-      return;
-    }
 
-    if (!allowed) {
-      log.warn("whatsapp", "message.rejected_unauthorized", {
-        from: maskPhone(from),
-        from_raw: from,
-        reason: "not_in_allowed_phones",
-      });
-      await sendWhatsApp(from, "Numero no autorizado en URBA.", { inbound_message_id: msg.id });
-      return;
-    }
+      const remoteJid = key.remoteJid || "";
+      if (remoteJid.endsWith("@g.us") || remoteJid.endsWith("@broadcast")) {
+        log.debug("whatsapp", "webhook.ignored", {
+          reason: "group_or_broadcast",
+          remote_jid: remoteJid,
+        });
+        continue;
+      }
 
-    const agentStarted = Date.now();
-    log.info("agent", "process.start", {
-      channel: "whatsapp",
-      telefono: maskPhone(from),
-      telefono_raw: from,
-      inbound_message_id: msg.id,
-      input_preview: truncate(text, 200),
-    });
+      const from =
+        jidToPhone(key.senderPn) ||
+        jidToPhone(item.senderPn) ||
+        jidToPhone(remoteJid);
 
-    const reply = await processAgentMessage(from, text, {
-      channel: "whatsapp",
-      messageId: msg.id,
-    });
+      if (!from) {
+        log.warn("whatsapp", "webhook.no_sender", { remote_jid: remoteJid });
+        continue;
+      }
 
-    const agentMs = Date.now() - agentStarted;
-    log.info("agent", "process.done", {
-      channel: "whatsapp",
-      telefono: maskPhone(from),
-      duration_ms: agentMs,
-      reply_preview: truncate(reply, 200),
-      reply_length: reply?.length ?? 0,
-    });
+      const message = item.message || {};
+      const text = extractInboundText(message);
+      const typeLabel = inboundTypeLabel(message);
 
-    const waText = markdownToWhatsApp(reply);
-    const sent = await sendWhatsApp(from, waText, {
-      inbound_message_id: msg.id,
-      reply_length: waText.length,
-    });
-
-    log.info("whatsapp", "message.flow_complete", {
-      from: maskPhone(from),
-      inbound_message_id: msg.id,
-      agent_ms: agentMs,
-      total_ms: Date.now() - receivedAt,
-      send_ok: sent.ok,
-      send_demo: sent.demo ?? false,
-    });
-
-    if (!sent.ok) {
-      log.error("whatsapp", "message.send_failed", {
-        to: maskPhone(from),
-        to_raw: from,
-        status: sent.status,
-        error: sent.error,
-        inbound_message_id: msg.id,
+      await handleInboundWhatsAppMessage({
+        from,
+        text,
+        messageId: key.id || `evo_${Date.now()}`,
+        msgType: text ? "text" : item.messageType || "unknown",
+        typeLabel: text ? undefined : typeLabel,
+        receivedAt,
       });
     }
   } catch (e) {

@@ -188,7 +188,7 @@ export default function Agent() {
       </section>
 
       <p className="text-caption text-text-quaternary text-center mt-6 leading-relaxed max-w-sm mx-auto">
-        Para WhatsApp interno: configurar <span className="mono text-text-tertiary">WHATSAPP_ACCESS_TOKEN</span> y <span className="mono text-text-tertiary">ALLOWED_PHONES</span> en el servidor.
+        Para WhatsApp interno: Evolution API + <span className="mono text-text-tertiary">ALLOWED_PHONES</span> en el servidor (Render).
       </p>
     </div>
   );

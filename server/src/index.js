@@ -66,7 +66,7 @@ async function start() {
       node_env: process.env.NODE_ENV || "development",
       log_level: process.env.LOG_LEVEL || "info",
       whatsapp_configured: Boolean(
-        process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID
+        process.env.EVOLUTION_API_URL && process.env.EVOLUTION_API_KEY && process.env.EVOLUTION_INSTANCE
       ),
       openai_configured: Boolean(process.env.OPENAI_API_KEY),
       render_url: renderUrl || null,

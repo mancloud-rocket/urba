@@ -1,6 +1,9 @@
 node_modules/
 dist/
 .env
+urba.env
+evolution/.env
+*.env.local
 *.db
 *.db-wal
 *.db-shm
