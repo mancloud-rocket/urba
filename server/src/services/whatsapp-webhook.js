@@ -5,7 +5,25 @@ import {
   jidToPhone,
   summarizeWebhookPayload,
 } from "./whatsapp.js";
-import { log, truncate } from "./logger.js";
+import { isBotMessageSent } from "./whatsapp-sent-cache.js";
+import { log, truncate, maskPhone } from "./logger.js";
+
+function resolveSenderPhone(body, item, key) {
+  const remoteJid = key.remoteJid || "";
+  if (key.fromMe) {
+    return (
+      jidToPhone(body?.sender) ||
+      jidToPhone(key.senderPn) ||
+      jidToPhone(item.senderPn) ||
+      jidToPhone(remoteJid)
+    );
+  }
+  return (
+    jidToPhone(key.senderPn) ||
+    jidToPhone(item.senderPn) ||
+    jidToPhone(remoteJid)
+  );
+}
 
 const UPSERT_EVENTS = new Set(["messages.upsert"]);
 
@@ -85,10 +103,12 @@ export async function handleWhatsAppWebhookPost(req, res) {
 
     for (const item of items) {
       const key = item.key || {};
-      if (key.fromMe) {
+      const messageId = key.id || `evo_${Date.now()}`;
+
+      if (key.fromMe && isBotMessageSent(messageId)) {
         log.debug("whatsapp", "webhook.ignored", {
-          reason: "from_me",
-          message_id: key.id,
+          reason: "bot_echo",
+          message_id: messageId,
         });
         continue;
       }
@@ -102,14 +122,19 @@ export async function handleWhatsAppWebhookPost(req, res) {
         continue;
       }
 
-      const from =
-        jidToPhone(key.senderPn) ||
-        jidToPhone(item.senderPn) ||
-        jidToPhone(remoteJid);
+      const from = resolveSenderPhone(req.body, item, key);
 
       if (!from) {
-        log.warn("whatsapp", "webhook.no_sender", { remote_jid: remoteJid });
+        log.warn("whatsapp", "webhook.no_sender", { remote_jid: remoteJid, from_me: key.fromMe });
         continue;
+      }
+
+      if (key.fromMe) {
+        log.info("whatsapp", "message.from_me", {
+          message_id: messageId,
+          from: maskPhone(from),
+          remote_jid: remoteJid,
+        });
       }
 
       const message = item.message || {};
@@ -119,7 +144,7 @@ export async function handleWhatsAppWebhookPost(req, res) {
       await handleInboundWhatsAppMessage({
         from,
         text,
-        messageId: key.id || `evo_${Date.now()}`,
+        messageId,
         msgType: text ? "text" : item.messageType || "unknown",
         typeLabel: text ? undefined : typeLabel,
         receivedAt,

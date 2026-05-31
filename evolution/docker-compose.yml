@@ -24,7 +24,7 @@ services:
       retries: 10
 
   evolution-api:
-    image: atendai/evolution-api:v2.2.3
+    image: evoapicloud/evolution-api:v2.3.7
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -33,8 +33,25 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    env_file:
-      - .env
+    environment:
+      AUTHENTICATION_API_KEY: ${AUTHENTICATION_API_KEY}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
+      SERVER_TYPE: http
+      SERVER_PORT: "8080"
+      SERVER_URL: ${SERVER_URL:-http://localhost:8080}
+      CORS_ORIGIN: "*"
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:evolution@postgres:5432/evolution?schema=public
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379
+      CONFIG_SESSION_PHONE_CLIENT: Evolution API
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      CONFIG_SESSION_PHONE_VERSION: ""
+      QRCODE_LIMIT: "30"
+      LOG_LEVEL: ERROR,WARN,DEBUG,INFO,LOG,VERBOSE,DARK,WEBHOOKS
+      SYNC_FULL_HISTORY: "false"
+      NODE_OPTIONS: --network-family-autoselection-attempt-timeout=1000
     volumes:
       - evolution_instances:/evolution/instances
     extra_hosts:

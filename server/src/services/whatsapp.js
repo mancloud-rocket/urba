@@ -1,4 +1,5 @@
 import { log, truncate, maskPhone } from "./logger.js";
+import { markBotMessageSent } from "./whatsapp-sent-cache.js";
 
 const WA_MAX_LEN = 4096;
 
@@ -52,10 +53,13 @@ export async function sendWhatsApp(to, text, meta = {}) {
     if (!last.ok) return last;
   }
 
+  const waMessageId = last?.data?.key?.id;
+  if (waMessageId) markBotMessageSent(waMessageId);
+
   log.info("whatsapp", "send.ok", {
     to: maskPhone(dest),
     chunks: chunks.length,
-    wa_message_id: last?.data?.key?.id,
+    wa_message_id: waMessageId,
     ...meta,
   });
 
