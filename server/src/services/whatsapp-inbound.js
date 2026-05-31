@@ -49,7 +49,6 @@ export async function handleInboundWhatsAppMessage({
       from_raw: from,
       reason: "not_in_allowed_phones",
     });
-    await sendWhatsApp(from, "Numero no autorizado en URBA.", { inbound_message_id: messageId });
     return;
   }
 
