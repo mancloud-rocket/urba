@@ -29,8 +29,28 @@ function isCommandChannel(body, key) {
   return key.fromMe && isSelfChat(body, key);
 }
 
-function resolveSenderPhone(body, key) {
-  return ownerPhone(body) || jidToPhone(key.remoteJid);
+function isPrivateChat(remoteJid) {
+  return remoteJid && !remoteJid.endsWith("@g.us") && !remoteJid.endsWith("@broadcast");
+}
+
+function shouldProcess(body, key, remoteJid) {
+  if (!isPrivateChat(remoteJid)) return false;
+  if (isCommandChannel(body, key)) return true;
+  if (key.fromMe) return false;
+  return true;
+}
+
+function resolveSenderPhone(body, item, key) {
+  if (key.fromMe) {
+    return ownerPhone(body) || jidToPhone(key.remoteJid);
+  }
+  return (
+    jidToPhone(key.remoteJidAlt) ||
+    jidToPhone(key.senderPn) ||
+    jidToPhone(item.senderPn) ||
+    jidToPhone(key.participant) ||
+    jidToPhone(key.remoteJid)
+  );
 }
 
 const UPSERT_EVENTS = new Set(["messages.upsert"]);
@@ -122,9 +142,9 @@ export async function handleWhatsAppWebhookPost(req, res) {
         continue;
       }
 
-      if (!isCommandChannel(req.body, key)) {
+      if (!shouldProcess(req.body, key, remoteJid)) {
         log.debug("whatsapp", "webhook.ignored", {
-          reason: key.fromMe ? "from_me_other_chat" : "incoming_not_self_chat",
+          reason: key.fromMe ? "from_me_other_chat" : "not_private_chat",
           message_id: messageId,
           from_me: key.fromMe,
           remote_jid: remoteJid,
@@ -132,24 +152,18 @@ export async function handleWhatsAppWebhookPost(req, res) {
         continue;
       }
 
-      if (remoteJid.endsWith("@g.us") || remoteJid.endsWith("@broadcast")) {
-        log.debug("whatsapp", "webhook.ignored", {
-          reason: "group_or_broadcast",
-          remote_jid: remoteJid,
-        });
-        continue;
-      }
-
-      const from = resolveSenderPhone(req.body, key);
+      const from = resolveSenderPhone(req.body, item, key);
 
       if (!from) {
-        log.warn("whatsapp", "webhook.no_sender", { remote_jid: remoteJid });
+        log.warn("whatsapp", "webhook.no_sender", { remote_jid: remoteJid, from_me: key.fromMe });
         continue;
       }
 
-      log.info("whatsapp", "message.self_chat_command", {
+      const commandChannel = isCommandChannel(req.body, key);
+      log.info("whatsapp", commandChannel ? "message.self_chat_command" : "message.inbound_candidate", {
         message_id: messageId,
         from: maskPhone(from),
+        from_me: key.fromMe,
         remote_jid: remoteJid,
       });
 
@@ -157,7 +171,7 @@ export async function handleWhatsAppWebhookPost(req, res) {
       const text = extractInboundText(message);
       const typeLabel = inboundTypeLabel(message);
 
-      if (text && isBotReplyFingerprint(from, text)) {
+      if (commandChannel && text && isBotReplyFingerprint(from, text)) {
         log.debug("whatsapp", "webhook.ignored", {
           reason: "bot_echo_fingerprint",
           message_id: messageId,
