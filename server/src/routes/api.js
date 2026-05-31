@@ -125,4 +125,19 @@ router.get("/whatsapp/webhook", handleWhatsAppWebhookVerify);
 
 router.post("/whatsapp/webhook", handleWhatsAppWebhookPost);
 
+router.get("/whatsapp/diagnostic", (_req, res) => {
+  const renderUrl = process.env.RENDER_EXTERNAL_URL;
+  log.info("whatsapp", "diagnostic.ping", { render_url: renderUrl });
+  res.json({
+    ok: true,
+    webhook_path: "/api/whatsapp/webhook",
+    webhook_url: renderUrl ? `${renderUrl}/api/whatsapp/webhook` : "set RENDER_EXTERNAL_URL or check Render dashboard",
+    whatsapp_token_set: Boolean(process.env.WHATSAPP_ACCESS_TOKEN),
+    phone_id_set: Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID),
+    verify_token_set: Boolean(process.env.WHATSAPP_VERIFY_TOKEN),
+    openai_set: Boolean(process.env.OPENAI_API_KEY),
+    db: process.env.SUPABASE_DB_HOST ? "postgres" : "sqlite",
+  });
+});
+
 export default router;

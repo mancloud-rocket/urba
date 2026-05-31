@@ -13,12 +13,25 @@ app.use(cors({ origin: true }));
 app.use(express.json());
 
 app.use((req, res, next) => {
+  const url = req.originalUrl || req.url;
+  const isWa = url.includes("whatsapp");
+  const isChat = url.includes("/chat");
+
+  if (isWa || isChat) {
+    log.info("http", "request.incoming", {
+      method: req.method,
+      url,
+      ip: req.ip,
+      user_agent: req.get("user-agent")?.slice(0, 80),
+    });
+  }
+
   const started = Date.now();
   res.on("finish", () => {
-    if (req.path.includes("whatsapp") || req.path.includes("/chat")) {
-      log.info("http", "request", {
+    if (isWa || isChat) {
+      log.info("http", "request.done", {
         method: req.method,
-        path: req.path,
+        url,
         status: res.statusCode,
         duration_ms: Date.now() - started,
       });
@@ -46,6 +59,7 @@ async function start() {
   }
 
   const server = app.listen(PORT, () => {
+    const renderUrl = process.env.RENDER_EXTERNAL_URL;
     log.info("system", "server.started", {
       port: PORT,
       db: driver,
@@ -55,6 +69,9 @@ async function start() {
         process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID
       ),
       openai_configured: Boolean(process.env.OPENAI_API_KEY),
+      render_url: renderUrl || null,
+      webhook_url: renderUrl ? `${renderUrl}/api/whatsapp/webhook` : null,
+      health_url: renderUrl ? `${renderUrl}/health` : null,
     });
   });
 

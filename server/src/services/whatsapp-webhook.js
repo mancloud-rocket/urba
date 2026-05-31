@@ -30,8 +30,13 @@ export function handleWhatsAppWebhookVerify(req, res) {
 
 export async function handleWhatsAppWebhookPost(req, res) {
   const receivedAt = Date.now();
-  const summary = summarizeWebhookPayload(req.body);
 
+  log.info("whatsapp", "webhook.post_hit", {
+    has_body: Boolean(req.body),
+    body_keys: req.body ? Object.keys(req.body) : [],
+  });
+
+  const summary = summarizeWebhookPayload(req.body);
   log.info("whatsapp", "webhook.received", summary);
 
   res.sendStatus(200);
