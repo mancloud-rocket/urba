@@ -3,11 +3,14 @@ import { Link } from "react-router-dom";
 import { api, fmt, fmtDate } from "../lib/api";
 import { REALTIME_TABLES } from "../lib/supabase";
 import { useRealtimeRefetch } from "../context/RealtimeProvider";
+import { useAuth } from "../context/AuthContext";
 import { PageHeader, KPI, Tag, Spinner, EmptyState, Divider } from "../components/primitives";
 import Icon from "../components/Icon";
-import Sparkline from "../components/Sparkline";
+import { ledgerLabel } from "../lib/ledger-labels";
 
 export default function Dashboard() {
+  const { profile } = useAuth();
+  const isAdmin = profile?.rol === "admin";
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -30,17 +33,15 @@ export default function Dashboard() {
     );
   }
 
-  const { aging, sales, clientCount, recentEntries } = data;
-  const buckets = [
-    { key: "mas_de_3", label: "+3 días", value: aging.buckets.mas_de_3, tone: "positive" },
-    { key: "de_1_a_3", label: "1–3 días", value: aging.buckets.de_1_a_3, tone: "info" },
-    { key: "vence_hoy", label: "Vence hoy", value: aging.buckets.vence_hoy, tone: "warning" },
-    { key: "vencido", label: "Vencido", value: aging.buckets.vencido, tone: "critical" },
-  ];
+  const { aging, sales, clientCount, recentEntries, expenseAlerts = [] } = data;
+  const buckets = isAdmin ? [
+    { key: "mas_de_3", label: "+3 dias", value: aging.buckets?.mas_de_3 || 0, tone: "positive" },
+    { key: "de_1_a_3", label: "1-3 dias", value: aging.buckets?.de_1_a_3 || 0, tone: "info" },
+    { key: "vence_hoy", label: "Vence hoy", value: aging.buckets?.vence_hoy || 0, tone: "warning" },
+    { key: "vencido", label: "Vencido", value: aging.buckets?.vencido || 0, tone: "critical" },
+  ] : [];
 
   const totalAging = buckets.reduce((s, b) => s + b.value, 0) || 1;
-
-  const sparkSeries = [3, 4, 3, 5, 4, 6, 5, 7, 6, 8, 7, 9];
 
   return (
     <div>
@@ -62,38 +63,40 @@ export default function Dashboard() {
         }
       />
 
-      {/* KPIs */}
+      {expenseAlerts.length > 0 && (
+        <section className="panel p-4 mb-4 border-l-4" style={{ borderColor: "rgb(var(--rgb-warning))" }}>
+          <p className="eyebrow text-warning">Gastos fijos pendientes</p>
+          <ul className="mt-2 space-y-1 text-caption">
+            {expenseAlerts.map((a) => (
+              <li key={a.template_id}>{a.mensaje}</li>
+            ))}
+          </ul>
+          <Link to="/gastos" className="btn-secondary mt-3 inline-flex">Ver gastos fijos</Link>
+        </section>
+      )}
+
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-4 stagger">
-        <KPI
-          label="Cartera"
-          value={fmt(aging.total_cartera)}
-          hint={`${clientCount} clientes activos`}
-          delta={4}
-          sparkline={<Sparkline data={sparkSeries} variant="line" className="mt-3" width={180} height={36} />}
-          accent
-        />
-        <KPI
-          label="Vencido"
-          value={fmt(aging.total_vencido)}
-          hint="Gestión prioritaria"
-          delta={-12}
-          sparkline={<Sparkline data={[2, 3, 2, 4, 3, 5, 4]} variant="bars" color="var(--critical)" className="mt-3" width={180} height={36} />}
-        />
-        <KPI
-          label="Ventas USD"
-          value={fmt(sales.total_venta, "USD")}
-          hint={`Margen ${fmt(sales.total_margen, "USD")}`}
-          delta={8}
-          sparkline={<Sparkline data={[3, 5, 4, 6, 5, 7, 8, 7, 9]} variant="line" color="var(--positive)" className="mt-3" width={180} height={36} />}
-        />
-        <KPI
-          label="Por cobrar"
-          value={fmt(sales.pendiente_cobro, "USD")}
-          hint={`${sales.total_lineas} líneas`}
-        />
+        {isAdmin ? (
+          <>
+            <KPI label="Cartera" value={fmt(aging.total_cartera)} hint={`${clientCount} clientes activos`} accent />
+            <KPI label="Vencido" value={fmt(aging.total_vencido)} hint="Gestion prioritaria" />
+            <KPI
+              label="Ventas USD"
+              value={fmt(sales.total_venta, "USD")}
+              hint={sales.total_margen != null ? `Margen ${fmt(sales.total_margen, "USD")}` : ""}
+            />
+            <KPI label="Por cobrar" value={fmt(sales.pendiente_cobro, "USD")} hint={`${sales.total_lineas} lineas`} />
+          </>
+        ) : (
+          <>
+            <KPI label="Clientes activos" value={String(clientCount)} hint="Vista operador" />
+            <KPI label="Ventas USD" value={fmt(sales?.total_venta, "USD")} hint={`${sales?.total_lineas || 0} lineas`} />
+            <KPI label="Por cobrar" value={fmt(sales?.pendiente_cobro, "USD")} hint="USD pendiente" />
+          </>
+        )}
       </section>
 
-      {/* Aging breakdown */}
+      {isAdmin && (
       <section className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-4">
         <div className="panel p-6 lg:col-span-3">
           <div className="flex items-baseline justify-between mb-5">
@@ -201,6 +204,7 @@ export default function Dashboard() {
           )}
         </div>
       </section>
+      )}
 
       {/* Recent activity */}
       <section className="panel overflow-hidden">
@@ -256,7 +260,7 @@ export default function Dashboard() {
                     </td>
                     <td>
                       <Tag tone={e.tipo === "cargo" ? "warning" : "positive"}>
-                        {e.tipo === "cargo" ? "Cargo" : "Abono"}
+                        {ledgerLabel(e.tipo)}
                       </Tag>
                     </td>
                     <td className="text-right money text-text-primary">{fmt(e.monto)}</td>

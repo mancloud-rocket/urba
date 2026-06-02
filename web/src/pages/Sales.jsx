@@ -3,6 +3,7 @@ import { api, fmt } from "../lib/api";
 import { REALTIME_TABLES } from "../lib/supabase";
 import { useRealtimeRefetch } from "../context/RealtimeProvider";
 import Modal from "../components/Modal";
+import { useAuth } from "../context/AuthContext";
 import { PageHeader, KPI, Tag, Spinner, EmptyState, Field } from "../components/primitives";
 import Icon from "../components/Icon";
 
@@ -14,6 +15,8 @@ const PAGO_TONE = {
 };
 
 export default function Sales() {
+  const { profile } = useAuth();
+  const isAdmin = profile?.rol === "admin";
   const [suppliers, setSuppliers] = useState([]);
   const [sales, setSales] = useState([]);
   const [stats, setStats] = useState(null);
@@ -86,9 +89,9 @@ export default function Sales() {
       {stats && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-5 stagger">
           <KPI label="Venta total" value={fmt(stats.total_venta, "USD")} />
-          <KPI label="Costo" value={fmt(stats.total_costo, "USD")} />
-          <KPI label="Margen" value={fmt(stats.total_margen, "USD")} accent />
-          <KPI label="Líneas" value={stats.total_lineas} hint="registradas" />
+          {isAdmin && <KPI label="Costo" value={fmt(stats.total_costo, "USD")} />}
+          {isAdmin && <KPI label="Margen" value={fmt(stats.total_margen, "USD")} accent />}
+          <KPI label="Lineas" value={stats.total_lineas} hint="registradas" />
         </div>
       )}
 
@@ -131,7 +134,7 @@ export default function Sales() {
                   <th>Producto</th>
                   <th>Cliente</th>
                   <th className="text-right">Venta</th>
-                  <th className="text-right">Margen</th>
+                  {isAdmin && <th className="text-right">Margen</th>}
                   <th>Pago</th>
                 </tr>
               </thead>
@@ -142,9 +145,11 @@ export default function Sales() {
                     <td className="font-medium text-text-primary max-w-[220px] truncate">{s.producto}</td>
                     <td className="text-caption text-text-tertiary">{s.cliente_nombre || "—"}</td>
                     <td className="text-right money text-text-primary">{fmt(s.usd_venta, "USD")}</td>
-                    <td className="text-right money text-positive">
-                      {fmt((s.usd_venta || 0) - (s.usd_costo || 0), "USD")}
-                    </td>
+                    {isAdmin && (
+                      <td className="text-right money text-positive">
+                        {fmt((s.usd_venta || 0) - (s.usd_costo || 0), "USD")}
+                      </td>
+                    )}
                     <td>
                       <Tag tone={PAGO_TONE[s.estado_pago] || "default"}>{s.estado_pago}</Tag>
                     </td>

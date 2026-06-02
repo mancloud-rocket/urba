@@ -107,8 +107,8 @@ export async function getSales({ supplierId, clientId, estadoPago } = {}) {
   return all(sql, params);
 }
 
-export async function getSalesStats() {
-  return get(`
+export async function getSalesStats(rol = "admin") {
+  const base = await get(`
     SELECT
       COUNT(*) AS total_lineas,
       COALESCE(SUM(usd_venta), 0) AS total_venta,
@@ -117,18 +117,69 @@ export async function getSalesStats() {
       COALESCE(SUM(CASE WHEN estado_pago != 'pagado' THEN usd_venta ELSE 0 END), 0) AS pendiente_cobro
     FROM sales_lines
   `);
+  if (rol === "admin") return base;
+  return {
+    total_lineas: base?.total_lineas,
+    total_venta: base?.total_venta,
+    pendiente_cobro: base?.pendiente_cobro,
+  };
 }
 
-export async function getDashboardStats() {
-  const aging = await getAgingSummary();
-  const sales = await getSalesStats();
+export async function getDashboardStats(rol = "admin") {
+  const aging = rol === "admin"
+    ? await getAgingSummary()
+    : { buckets: {}, total_cartera: null, total_vencido: null, vencidos: [], fecha_actual: new Date().toISOString().slice(0, 10) };
+  const sales = await getSalesStats(rol);
   const countRow = await get(`SELECT COUNT(*) AS n FROM clients WHERE activo = ${D.activeTrue()}`);
   const recentEntries = await all(`
     SELECT le.*, c.codigo, c.nombre
     FROM ledger_entries le JOIN clients c ON c.id = le.client_id
+    WHERE le.tipo != 'pago_contado'
     ORDER BY le.created_at DESC LIMIT 8
   `);
-  return { aging, sales, clientCount: Number(countRow?.n) || 0, recentEntries };
+  const expenseAlerts = rol === "admin" || rol === "cajero"
+    ? await import("./expenses.js").then((m) => m.getExpenseAlerts())
+    : [];
+  return {
+    aging,
+    sales,
+    clientCount: Number(countRow?.n) || 0,
+    recentEntries,
+    expenseAlerts,
+  };
+}
+
+export async function getClientDetail(codigo) {
+  const c = await getClientByCodigo(codigo);
+  if (!c) return null;
+  const balances = await getClientBalances();
+  const balance = balances.find((b) => b.id === c.id);
+  const allLedger = await getClientLedger(c.id);
+  const ledger = allLedger.filter((e) => e.tipo !== "pago_contado");
+  const contado = allLedger.filter((e) => e.tipo === "pago_contado");
+  const invoices = await import("./invoices.js").then((m) => m.getClientInvoices(c.id));
+  return {
+    ...c,
+    saldo: balance?.saldo || 0,
+    ledger,
+    contado,
+    invoices,
+  };
+}
+
+export async function getAppUserById(userId) {
+  return get(`SELECT * FROM app_users WHERE id = ? AND activo = ${D.activeTrue()}`, [userId]);
+}
+
+export async function getAppUserByPhone(telefono) {
+  const norm = telefono.replace(/\D/g, "");
+  const row = await get(`
+    SELECT au.* FROM app_users au
+    JOIN allowed_phones ap ON ap.app_user_id = au.id
+    WHERE ap.telefono = ? AND ap.activo = ${D.activeTrue()} AND au.activo = ${D.activeTrue()}
+  `, [norm]);
+  if (row) return row;
+  return get(`SELECT * FROM app_users WHERE telefono = ? AND activo = ${D.activeTrue()}`, [norm]);
 }
 
 export async function getAllowedPhones() {

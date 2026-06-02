@@ -1,18 +1,30 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useRealtimeStatus } from "../context/RealtimeProvider";
+import { useAuth } from "../context/AuthContext";
 import { LogoMark } from "./Logo";
 import Icon from "./Icon";
 import { Kbd } from "./primitives";
 
-const NAV = [
+const NAV_BASE = [
   { to: "/", label: "Panel", icon: "panel", end: true },
   { to: "/clientes", label: "Clientes", icon: "users" },
   { to: "/ventas", label: "Ventas", icon: "bag" },
   { to: "/agente", label: "Agente", icon: "agent" },
 ];
 
-function Sidebar() {
+function navForRole(rol) {
+  const nav = [...NAV_BASE];
+  if (rol === "admin" || rol === "cajero") {
+    nav.splice(3, 0, { to: "/caja", label: "Caja", icon: "panel" });
+  }
+  if (rol === "admin" || rol === "cajero") {
+    nav.splice(4, 0, { to: "/gastos", label: "Gastos", icon: "bell" });
+  }
+  return nav;
+}
+
+function Sidebar({ nav, profile, onSignOut }) {
   return (
     <aside className="hidden lg:flex w-[220px] shrink-0 flex-col glass rounded-2xl overflow-hidden">
       <div className="px-4 h-[52px] flex items-center">
@@ -31,7 +43,7 @@ function Sidebar() {
         <p className="px-2.5 pt-1 pb-2 text-[10px] uppercase tracking-[0.12em] font-medium text-text-quaternary">
           Workspace
         </p>
-        {NAV.map((n) => (
+        {nav.map((n) => (
           <NavLink
             key={n.to}
             to={n.to}
@@ -59,9 +71,14 @@ function Sidebar() {
             <span className="text-[10px] font-semibold text-accent">U</span>
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-caption text-text-primary truncate font-medium">Urbano</p>
-            <p className="text-[10px] text-text-quaternary truncate">Barraca · Solymar</p>
+            <p className="text-caption text-text-primary truncate font-medium">{profile?.nombre || "Usuario"}</p>
+            <p className="text-[10px] text-text-quaternary truncate">{profile?.rol || "operador"}</p>
           </div>
+          {onSignOut && (
+            <button type="button" className="btn-ghost text-[10px] shrink-0" onClick={onSignOut}>
+              Salir
+            </button>
+          )}
         </div>
       </div>
     </aside>
@@ -100,9 +117,9 @@ function LiveIndicator() {
   );
 }
 
-function Topbar({ onOpenSearch }) {
+function Topbar({ onOpenSearch, nav }) {
   const location = useLocation();
-  const current = NAV.find(
+  const current = nav.find(
     (n) => n.to === location.pathname || (n.to !== "/" && location.pathname.startsWith(n.to))
   );
 
@@ -151,14 +168,15 @@ function Topbar({ onOpenSearch }) {
   );
 }
 
-function MobileTabBar() {
+function MobileTabBar({ nav }) {
+  const cols = Math.min(nav.length, 5);
   return (
     <nav
       className="lg:hidden fixed bottom-0 inset-x-0 z-40 glass-nav pb-[env(safe-area-inset-bottom)]"
       style={{ borderTop: "1px solid rgb(var(--rgb-border-subtle) / 0.05)" }}
     >
-      <div className="grid grid-cols-4">
-        {NAV.map((n) => (
+      <div className="grid" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+        {nav.slice(0, cols).map((n) => (
           <NavLink
             key={n.to}
             to={n.to}
@@ -217,6 +235,8 @@ function SearchPalette({ open, onClose }) {
 }
 
 export default function Layout() {
+  const { profile, signOut, isConfigured } = useAuth();
+  const nav = navForRole(profile?.rol || "admin");
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   useEffect(() => {
@@ -232,10 +252,10 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row lg:gap-3 lg:p-3">
-      <Sidebar />
+      <Sidebar nav={nav} profile={profile} onSignOut={isConfigured ? signOut : null} />
 
       <div className="flex-1 flex flex-col min-w-0 min-h-screen lg:min-h-[calc(100vh-24px)]">
-        <Topbar onOpenSearch={() => setPaletteOpen(true)} />
+        <Topbar nav={nav} onOpenSearch={() => setPaletteOpen(true)} />
 
         <main className="flex-1 overflow-auto pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0">
           <div className="max-w-6xl mx-auto px-4 sm:px-5 lg:px-8 py-6 lg:py-8 animate-rise">
@@ -244,7 +264,7 @@ export default function Layout() {
         </main>
       </div>
 
-      <MobileTabBar />
+      <MobileTabBar nav={nav} />
       <SearchPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );

@@ -1,7 +1,7 @@
 import { sendWhatsApp } from "./whatsapp.js";
 import { markdownToWhatsApp } from "./format-reply.js";
 import { processAgentMessage } from "./openai-agent.js";
-import { isPhoneAllowed } from "./queries.js";
+import { isPhoneAllowed, getAppUserByPhone } from "./queries.js";
 import { log, truncate, maskPhone } from "./logger.js";
 
 export async function handleInboundWhatsAppMessage({
@@ -61,9 +61,11 @@ export async function handleInboundWhatsAppMessage({
     input_preview: truncate(text, 200),
   });
 
+  const appUser = await getAppUserByPhone(from);
   const reply = await processAgentMessage(from, text, {
     channel: "whatsapp",
     messageId,
+    userRol: appUser?.rol || "admin",
   });
 
   const agentMs = Date.now() - agentStarted;

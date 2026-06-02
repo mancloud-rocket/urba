@@ -3,7 +3,8 @@
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-CREATE TYPE ledger_tipo AS ENUM ('cargo', 'abono', 'a_cuenta');
+CREATE TYPE ledger_tipo AS ENUM ('cargo', 'abono', 'a_cuenta', 'pago_contado');
+CREATE TYPE app_role AS ENUM ('admin', 'operador', 'cajero');
 CREATE TYPE medio_pago AS ENUM ('efectivo', 'transferencia', 'tarjeta', 'cheque', 'otro');
 CREATE TYPE estado_venta AS ENUM ('pedido', 'entregado', 'debe', 'pagado', 'parcial', 'otro');
 CREATE TYPE estado_pago AS ENUM ('pendiente', 'pagado', 'parcial', 'otro');
@@ -110,7 +111,7 @@ SELECT
   COALESCE(SUM(CASE WHEN le.tipo = 'cargo' THEN le.monto ELSE 0 END), 0)
     - COALESCE(SUM(CASE WHEN le.tipo IN ('abono', 'a_cuenta') THEN le.monto ELSE 0 END), 0) AS saldo
 FROM clients c
-LEFT JOIN ledger_entries le ON le.client_id = c.id
+LEFT JOIN ledger_entries le ON le.client_id = c.id AND le.tipo != 'pago_contado'
 GROUP BY c.id, c.codigo, c.nombre, c.plazo_dias, c.telefono;
 
 -- RLS: el backend usa DATABASE_URL (service role) y bypasea RLS.
@@ -146,3 +147,95 @@ CREATE POLICY "anon_select_clients" ON clients FOR SELECT TO anon USING (true);
 CREATE POLICY "anon_select_ledger" ON ledger_entries FOR SELECT TO anon USING (true);
 CREATE POLICY "anon_select_sales" ON sales_lines FOR SELECT TO anon USING (true);
 CREATE POLICY "anon_select_suppliers" ON suppliers FOR SELECT TO anon USING (true);
+
+-- Extensiones v2 (ver migrations/ en proyectos existentes)
+CREATE TABLE client_invoices (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE RESTRICT,
+  ledger_entry_id UUID REFERENCES ledger_entries(id) ON DELETE SET NULL,
+  fecha DATE NOT NULL DEFAULT CURRENT_DATE,
+  es_generica BOOLEAN NOT NULL DEFAULT FALSE,
+  observacion TEXT,
+  created_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE invoice_lines (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  invoice_id UUID NOT NULL REFERENCES client_invoices(id) ON DELETE CASCADE,
+  descripcion TEXT NOT NULL,
+  cantidad NUMERIC(12,3) NOT NULL DEFAULT 1,
+  precio_unitario NUMERIC(14,2),
+  subtotal NUMERIC(14,2) NOT NULL
+);
+
+CREATE TABLE notification_log (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  client_id UUID REFERENCES clients(id),
+  ledger_entry_id UUID REFERENCES ledger_entries(id),
+  telefono TEXT NOT NULL,
+  tipo TEXT NOT NULL,
+  mensaje TEXT,
+  enviado BOOLEAN DEFAULT FALSE,
+  error TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE cash_closures (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  fecha DATE NOT NULL UNIQUE,
+  cerrado_por TEXT NOT NULL,
+  estado TEXT NOT NULL DEFAULT 'borrador',
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE cash_closure_lines (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  closure_id UUID NOT NULL REFERENCES cash_closures(id) ON DELETE CASCADE,
+  categoria TEXT NOT NULL,
+  monto NUMERIC(14,2) NOT NULL,
+  es_ingreso BOOLEAN NOT NULL DEFAULT TRUE,
+  referencia TEXT,
+  origen TEXT NOT NULL DEFAULT 'manual',
+  ledger_entry_id UUID REFERENCES ledger_entries(id)
+);
+
+CREATE TABLE cash_categories (
+  codigo TEXT PRIMARY KEY,
+  nombre TEXT NOT NULL,
+  es_ingreso BOOLEAN NOT NULL,
+  orden INTEGER DEFAULT 0
+);
+
+CREATE TABLE expense_templates (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  nombre TEXT NOT NULL,
+  dia_vencimiento INTEGER CHECK (dia_vencimiento BETWEEN 1 AND 28),
+  monto_referencia NUMERIC(14,2),
+  activo BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE expense_payments (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  template_id UUID NOT NULL REFERENCES expense_templates(id) ON DELETE CASCADE,
+  anio INTEGER NOT NULL,
+  mes INTEGER NOT NULL CHECK (mes BETWEEN 1 AND 12),
+  fecha_pago DATE NOT NULL,
+  monto NUMERIC(14,2) NOT NULL,
+  registrado_por TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(template_id, anio, mes)
+);
+
+CREATE TABLE app_users (
+  id UUID PRIMARY KEY,
+  nombre TEXT NOT NULL,
+  rol app_role NOT NULL DEFAULT 'operador',
+  telefono TEXT,
+  activo BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE allowed_phones ADD COLUMN app_user_id UUID REFERENCES app_users(id);

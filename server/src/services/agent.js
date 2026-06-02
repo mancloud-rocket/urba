@@ -11,8 +11,10 @@ import { resolveClient, resolveClientCodigo, searchClientsSmart } from "./client
 import {
   savePendingConfirmation,
   consumePendingConfirmation,
+  getPendingConfirmation,
   executeConfirmedAction,
 } from "./mutations.js";
+import { getAppUserByPhone } from "./queries.js";
 
 export const TOOL_DEFINITIONS = [
   {
@@ -133,12 +135,12 @@ export const TOOL_DEFINITIONS = [
   {
     type: "function",
     function: {
-      name: "preparar_cargo",
-      description: "Prepara fiado/cargo pendiente de confirmacion SI del usuario",
+      name: "preparar_factura",
+      description: "Prepara factura (fiado) pendiente de confirmacion SI",
       parameters: {
         type: "object",
         properties: {
-          cliente_busqueda: { type: "string", description: "Nombre o apodo si no hay codigo" },
+          cliente_busqueda: { type: "string" },
           cliente_codigo: { type: "string" },
           monto: { type: "number" },
           referencia: { type: "string" },
@@ -151,8 +153,8 @@ export const TOOL_DEFINITIONS = [
   {
     type: "function",
     function: {
-      name: "preparar_abono",
-      description: "Prepara cobro/abono pendiente de confirmacion SI del usuario",
+      name: "preparar_cobranza",
+      description: "Prepara cobranza (cobro) pendiente de confirmacion SI",
       parameters: {
         type: "object",
         properties: {
@@ -163,6 +165,45 @@ export const TOOL_DEFINITIONS = [
           observacion: { type: "string" },
         },
         required: ["monto"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "preparar_pago_contado",
+      description: "Prepara pago al contado (no afecta saldo CC) pendiente de confirmacion SI",
+      parameters: {
+        type: "object",
+        properties: {
+          cliente_busqueda: { type: "string" },
+          cliente_codigo: { type: "string" },
+          monto: { type: "number" },
+          medio_pago: { type: "string", enum: ["efectivo", "transferencia", "tarjeta", "cheque", "otro"] },
+          referencia: { type: "string" },
+          observacion: { type: "string" },
+        },
+        required: ["monto", "medio_pago"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "preparar_factura_detalle",
+      description: "Factura con lineas de detalle o mercaderias varias",
+      parameters: {
+        type: "object",
+        properties: {
+          cliente_busqueda: { type: "string" },
+          cliente_codigo: { type: "string" },
+          es_generica: { type: "boolean" },
+          monto: { type: "number", description: "Total si es_generica" },
+          lines: { type: "array", items: { type: "object" } },
+          referencia: { type: "string" },
+          observacion: { type: "string" },
+        },
+        required: ["cliente_busqueda"],
       },
     },
   },
@@ -192,7 +233,26 @@ async function resolveForRead(busqueda, codigo) {
   return resolveClientCodigo(key);
 }
 
-export async function runTool(name, args, telefono) {
+async function prepareWrite(telefono, actionType, args, label, extra = {}) {
+  const r = await resolveForWrite(args);
+  if (r.error) return r;
+  const c = r.cliente;
+  await savePendingConfirmation(telefono, actionType, {
+    cliente_codigo: r.codigo,
+    monto: args.monto,
+    referencia: args.referencia,
+    observacion: args.observacion,
+    medio_pago: args.medio_pago,
+    ...extra,
+  });
+  const ref = args.referencia ? ` ref: ${args.referencia}` : "";
+  return {
+    pendiente_confirmacion: true,
+    mensaje: `Confirmar ${label} $${Number(args.monto).toLocaleString("es-UY")} ${actionType.includes("abono") || actionType.includes("cobranza") ? "de" : "a"} ${c.nombre} (${r.codigo})${ref}. Responde SI para confirmar.`,
+  };
+}
+
+export async function runTool(name, args, telefono, context = {}) {
   switch (name) {
     case "resolver_cliente":
       return resolveClient(args.busqueda);
@@ -293,8 +353,14 @@ export async function runTool(name, args, telefono) {
     case "listar_vencidos":
       return getAgingSummary();
 
-    case "resumen_cartera":
-      return getDashboardStats();
+    case "resumen_cartera": {
+      const user = await getAppUserByPhone(telefono.replace(/\D/g, ""));
+      const rol = context.userRol || user?.rol || "operador";
+      if (rol !== "admin") {
+        return { error: "Resumen de cartera solo disponible para administracion." };
+      }
+      return getDashboardStats("admin");
+    }
 
     case "buscar_ventas": {
       const suppliers = await getSuppliers();
@@ -316,35 +382,34 @@ export async function runTool(name, args, telefono) {
       return rows.slice(0, args.limite || 20);
     }
 
-    case "preparar_cargo": {
+    case "preparar_factura":
+    case "preparar_cargo":
+      return prepareWrite(telefono, "registrar_cargo", args, "factura");
+
+    case "preparar_cobranza":
+    case "preparar_abono":
+      return prepareWrite(telefono, "registrar_abono", {
+        ...args,
+        medio_pago: args.medio_pago || "efectivo",
+      }, "cobranza");
+
+    case "preparar_pago_contado":
+      return prepareWrite(telefono, "registrar_pago_contado", args, "pago contado");
+
+    case "preparar_factura_detalle": {
       const r = await resolveForWrite(args);
       if (r.error) return r;
-      const c = r.cliente;
-      await savePendingConfirmation(telefono, "registrar_cargo", {
+      await savePendingConfirmation(telefono, "registrar_factura_detalle", {
         cliente_codigo: r.codigo,
+        es_generica: Boolean(args.es_generica),
         monto: args.monto,
+        lines: args.lines,
         referencia: args.referencia,
         observacion: args.observacion,
       });
       return {
         pendiente_confirmacion: true,
-        mensaje: `Confirmar cargo $${Number(args.monto).toLocaleString("es-UY")} a ${c.nombre} (${r.codigo})${args.referencia ? ` ref: ${args.referencia}` : ""}. Responde SI para confirmar.`,
-      };
-    }
-
-    case "preparar_abono": {
-      const r = await resolveForWrite(args);
-      if (r.error) return r;
-      const c = r.cliente;
-      await savePendingConfirmation(telefono, "registrar_abono", {
-        cliente_codigo: r.codigo,
-        monto: args.monto,
-        medio_pago: args.medio_pago || "efectivo",
-        observacion: args.observacion,
-      });
-      return {
-        pendiente_confirmacion: true,
-        mensaje: `Confirmar abono $${Number(args.monto).toLocaleString("es-UY")} de ${c.nombre} (${r.codigo}). Responde SI para confirmar.`,
+        mensaje: `Confirmar factura detallada a ${r.cliente.nombre} (${r.codigo}). Responde SI para confirmar.`,
       };
     }
 
@@ -353,13 +418,35 @@ export async function runTool(name, args, telefono) {
   }
 }
 
+const WRITE_ACTIONS = new Set([
+  "registrar_cargo",
+  "registrar_abono",
+  "registrar_pago_contado",
+  "registrar_factura_detalle",
+]);
+
 export async function handleConfirmation(telefono, text, actor) {
   const norm = text.trim().toUpperCase();
+  const pendingPeek = await getPendingConfirmation(telefono);
+
+  if (pendingPeek?.action_type === "enviar_aviso") {
+    await consumePendingConfirmation(telefono);
+    if (norm === "NO") {
+      return { ok: true, accion: "aviso_omitido", result: null };
+    }
+    if (norm === "SI" || norm === "SÍ" || norm === "CONFIRMO") {
+      const result = await executeConfirmedAction("enviar_aviso", pendingPeek.payload, actor);
+      return { ok: true, accion: "enviar_aviso", result };
+    }
+    return { error: "Responde SI o NO para el aviso al cliente." };
+  }
+
   if (norm !== "SI" && norm !== "SÍ" && norm !== "CONFIRMO") {
     return null;
   }
+
   const pending = await consumePendingConfirmation(telefono);
   if (!pending) return { error: "No hay operacion pendiente de confirmar." };
   const result = await executeConfirmedAction(pending.action_type, pending.payload, actor);
-  return { ok: true, accion: pending.action_type, result };
+  return { ok: true, accion: pending.action_type, result, needs_aviso: WRITE_ACTIONS.has(pending.action_type) };
 }

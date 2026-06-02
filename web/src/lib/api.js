@@ -1,10 +1,16 @@
 const BASE = import.meta.env.VITE_API_URL || "";
 
+let authToken = null;
+
+export function setAuthToken(token) {
+  authToken = token;
+}
+
 async function request(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options.headers },
-    ...options,
-  });
+  const headers = { "Content-Type": "application/json", ...options.headers };
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+  const res = await fetch(`${BASE}${path}`, { ...options, headers });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || res.statusText);
@@ -18,6 +24,11 @@ export const api = {
   client: (codigo) => request(`/api/clients/${codigo}`),
   createClient: (data) => request("/api/clients", { method: "POST", body: JSON.stringify(data) }),
   createLedger: (data) => request("/api/ledger", { method: "POST", body: JSON.stringify(data) }),
+  createInvoice: (data) => request("/api/invoices", { method: "POST", body: JSON.stringify(data) }),
+  notificationPreview: (params) => {
+    const q = new URLSearchParams(params).toString();
+    return request(`/api/notifications/preview?${q}`);
+  },
   aging: () => request("/api/aging"),
   suppliers: () => request("/api/suppliers"),
   sales: (params = {}) => {
@@ -28,6 +39,17 @@ export const api = {
   createSale: (data) => request("/api/sales", { method: "POST", body: JSON.stringify(data) }),
   chat: (message) => request("/api/chat", { method: "POST", body: JSON.stringify({ message }) }),
   phones: () => request("/api/config/phones"),
+  cashToday: () => request("/api/cash/today"),
+  cashCategories: () => request("/api/cash/categories"),
+  addCashLine: (data) => request("/api/cash/lines", { method: "POST", body: JSON.stringify(data) }),
+  closeCash: (data) => request("/api/cash/close", { method: "POST", body: JSON.stringify(data) }),
+  cashHistory: (month) => request(`/api/cash/history?month=${month}`),
+  expenseTemplates: () => request("/api/expenses/templates"),
+  createExpenseTemplate: (data) =>
+    request("/api/expenses/templates", { method: "POST", body: JSON.stringify(data) }),
+  registerExpensePayment: (data) =>
+    request("/api/expenses/payments", { method: "POST", body: JSON.stringify(data) }),
+  expenseAlerts: () => request("/api/expenses/alerts"),
 };
 
 export function fmt(n, currency = "UYU") {

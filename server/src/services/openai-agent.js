@@ -2,6 +2,10 @@ import OpenAI from "openai";
 import { TOOL_DEFINITIONS, runTool, handleConfirmation } from "./agent.js";
 import { SYSTEM_PROMPT } from "./agent-prompt.js";
 import { resolveClientCodigo } from "./client-search.js";
+import { savePendingConfirmation } from "./mutations.js";
+import { get } from "../db.js";
+import { getClientByCodigo } from "./queries.js";
+import { ledgerLabel } from "../lib/ledger-labels.js";
 import { log, truncate, maskPhone } from "./logger.js";
 
 const MAX_TOOL_ROUNDS = 10;
@@ -29,17 +33,48 @@ export async function processAgentMessage(telefono, userText, context = {}) {
     message_id: context.messageId,
   };
 
-  const confirm = await handleConfirmation(telefono, userText, `${channel}:${telefono}`);
+  const actor = `${channel}:${telefono}`;
+  const confirm = await handleConfirmation(telefono, userText, actor);
   if (confirm) {
     if (confirm.error) {
       log.warn("agent", "confirm.rejected", { ...ctx, reason: confirm.error });
       return confirm.error;
     }
-    log.info("agent", "confirm.executed", {
-      ...ctx,
-      action: confirm.accion,
-    });
-    const msg = `Listo. ${confirm.accion === "registrar_cargo" ? "Cargo" : confirm.accion === "registrar_abono" ? "Abono" : "Operacion"} registrado correctamente.`;
+    log.info("agent", "confirm.executed", { ...ctx, action: confirm.accion });
+
+    if (confirm.accion === "aviso_omitido") {
+      const msg = "Listo, no se envio aviso al cliente.";
+      pushSession(telefono, userText, msg);
+      return msg;
+    }
+    if (confirm.accion === "enviar_aviso") {
+      const r = confirm.result;
+      const msg = r?.sent
+        ? "Aviso enviado al cliente por WhatsApp."
+        : r?.skipped
+          ? "No se pudo avisar: el cliente no tiene telefono cargado."
+          : `No se pudo enviar el aviso: ${r?.error || "error"}`;
+      pushSession(telefono, userText, msg);
+      return msg;
+    }
+
+    let msg = "Listo. Operacion registrada correctamente.";
+    if (confirm.needs_aviso && confirm.result) {
+      const entry = confirm.result.ledger_entry || confirm.result;
+      const client = entry.client_id
+        ? await get("SELECT * FROM clients WHERE id = ?", [entry.client_id])
+        : await getClientByCodigo(entry.codigo);
+      if (client?.telefono) {
+        const tipo = entry.tipo === "abono" ? "cobranza" : "factura";
+        await savePendingConfirmation(telefono, "enviar_aviso", { client, entry, tipo });
+        msg = `Listo. ${ledgerLabel(entry.tipo)} registrada. ¿Mando aviso al cliente por WhatsApp? Responde SI o NO.`;
+      } else {
+        msg = `Listo. ${ledgerLabel(entry.tipo)} registrada. (Cliente sin telefono, no se puede avisar por WhatsApp.)`;
+      }
+    } else if (confirm.result?.tipo) {
+      msg = `Listo. ${ledgerLabel(confirm.result.tipo)} registrada correctamente.`;
+    }
+
     pushSession(telefono, userText, msg);
     return msg;
   }
@@ -129,7 +164,7 @@ export async function processAgentMessage(telefono, userText, context = {}) {
       }
 
       const toolStarted = Date.now();
-      const result = await runTool(tc.function.name, args, telefono);
+      const result = await runTool(tc.function.name, args, telefono, context);
 
       log.info("agent", "tool.executed", {
         ...ctx,

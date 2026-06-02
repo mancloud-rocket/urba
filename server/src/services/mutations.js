@@ -2,6 +2,9 @@ import { v4 as uuid } from "uuid";
 import { get, run, isPostgres, D } from "../db.js";
 import { audit } from "./audit.js";
 import { getClientByCodigo } from "./queries.js";
+import { VALID_LEDGER_TIPOS } from "../lib/ledger-labels.js";
+import { sendClientNotification } from "./client-notification.js";
+import { createInvoice } from "./invoices.js";
 
 function addDays(dateStr, days) {
   const d = new Date(dateStr);
@@ -25,16 +28,30 @@ export async function createClient(data, actor = "web") {
 }
 
 export async function createLedgerEntry(data, actor = "web") {
+  if (!VALID_LEDGER_TIPOS.includes(data.tipo)) {
+    throw new Error(`Tipo invalido: ${data.tipo}`);
+  }
+
   const client = data.client_id
     ? await get("SELECT * FROM clients WHERE id = ?", [data.client_id])
     : await getClientByCodigo(data.cliente_codigo);
   if (!client) throw new Error("Cliente no encontrado");
+
+  if (data.tipo === "pago_contado" && !data.medio_pago) {
+    throw new Error("Pago contado requiere medio_pago");
+  }
 
   const fecha = data.fecha || new Date().toISOString().slice(0, 10);
   let venc = data.fecha_vencimiento;
   if (!venc && data.tipo === "cargo") {
     venc = addDays(fecha, client.plazo_dias);
   }
+
+  const estadoDefault = data.tipo === "cargo"
+    ? "Debe"
+    : data.tipo === "pago_contado"
+      ? "Pago"
+      : "Pago";
 
   const id = uuid();
   await run(`
@@ -43,14 +60,26 @@ export async function createLedgerEntry(data, actor = "web") {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     id, client.id, fecha, data.referencia || null, data.tipo, data.monto,
-    data.medio_pago || null, venc || null, data.observacion || null,
-    data.estado || (data.tipo === "cargo" ? "Debe" : "Pago"), actor,
+    data.medio_pago || null,
+    data.tipo === "pago_contado" ? null : (venc || null),
+    data.observacion || null,
+    data.estado || estadoDefault,
+    actor,
   ]);
   await audit(actor, "ledger_entry", { id, client: client.codigo, tipo: data.tipo, monto: data.monto });
-  return get(`
+
+  const entry = await get(`
     SELECT le.*, c.codigo, c.nombre FROM ledger_entries le
     JOIN clients c ON c.id = le.client_id WHERE le.id = ?
   `, [id]);
+
+  let notification = null;
+  if (data.enviar_whatsapp) {
+    const tipo = data.tipo === "abono" ? "cobranza" : "factura";
+    notification = await sendClientNotification({ client, entry, tipo }, actor);
+  }
+
+  return { ...entry, notification };
 }
 
 export async function createSaleLine(data, actor = "web") {
@@ -103,24 +132,38 @@ export async function savePendingConfirmation(telefono, actionType, payload) {
   return id;
 }
 
-export async function consumePendingConfirmation(telefono) {
+export async function getPendingConfirmation(telefono) {
   const row = await get(`
     SELECT * FROM pending_confirmations
     WHERE telefono = ? AND expires_at > ${D.now()}
     ORDER BY created_at DESC LIMIT 1
   `, [telefono]);
   if (!row) return null;
-  await run("DELETE FROM pending_confirmations WHERE id = ?", [row.id]);
   const payload = typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload;
   return { ...row, payload };
+}
+
+export async function consumePendingConfirmation(telefono) {
+  const row = await getPendingConfirmation(telefono);
+  if (!row) return null;
+  await run("DELETE FROM pending_confirmations WHERE id = ?", [row.id]);
+  return row;
 }
 
 export async function executeConfirmedAction(actionType, payload, actor) {
   switch (actionType) {
     case "registrar_cargo":
+    case "registrar_factura":
       return createLedgerEntry({ ...payload, tipo: "cargo" }, actor);
     case "registrar_abono":
+    case "registrar_cobranza":
       return createLedgerEntry({ ...payload, tipo: "abono" }, actor);
+    case "registrar_pago_contado":
+      return createLedgerEntry({ ...payload, tipo: "pago_contado" }, actor);
+    case "registrar_factura_detalle":
+      return createInvoice(payload, actor);
+    case "enviar_aviso":
+      return sendClientNotification(payload, actor);
     case "crear_cliente":
       return createClient(payload, actor);
     case "registrar_venta":
