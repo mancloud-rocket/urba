@@ -9,27 +9,46 @@ import Icon from "../components/Icon";
 import { ledgerLabel } from "../lib/ledger-labels";
 
 export default function Dashboard() {
-  const { profile } = useAuth();
+  const { profile, session, loading: authLoading, isConfigured } = useAuth();
   const isAdmin = profile?.rol === "admin";
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const load = useCallback(({ silent } = {}) => {
     if (!silent) setLoading(true);
+    setError(null);
     return api.dashboard()
       .then(setData)
-      .catch(console.error)
+      .catch((err) => {
+        console.error(err);
+        setData(null);
+        setError(err.message || "Error al cargar el panel");
+      })
       .finally(() => { if (!silent) setLoading(false); });
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (authLoading) return;
+    if (isConfigured && !session) return;
+    load();
+  }, [load, authLoading, session, isConfigured]);
   useRealtimeRefetch(load, REALTIME_TABLES.dashboard);
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
         <Spinner size={20} />
       </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <EmptyState
+        title="No se pudo cargar el panel"
+        description={error || "Sin datos"}
+      />
     );
   }
 

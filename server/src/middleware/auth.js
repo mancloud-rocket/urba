@@ -1,29 +1,13 @@
-import crypto from "crypto";
+import jwt from "jsonwebtoken";
 import { getAppUserById } from "../services/queries.js";
 
-function decodeJwtPayload(token) {
-  const parts = token.split(".");
-  if (parts.length !== 3) return null;
+function verifySupabaseJwt(token, secret) {
+  const trimmed = (secret || "").trim();
+  if (!trimmed) return null;
   try {
-    const json = Buffer.from(parts[1], "base64url").toString("utf8");
-    return JSON.parse(json);
+    return jwt.verify(token, trimmed, { algorithms: ["HS256"] });
   } catch {
     return null;
-  }
-}
-
-function verifyHs256(token, secret) {
-  const parts = token.split(".");
-  if (parts.length !== 3) return false;
-  const [header, payload, sig] = parts;
-  const expected = crypto
-    .createHmac("sha256", secret)
-    .update(`${header}.${payload}`)
-    .digest("base64url");
-  try {
-    return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
-  } catch {
-    return false;
   }
 }
 
@@ -43,30 +27,24 @@ export async function authMiddleware(req, res, next) {
     return res.status(401).json({ error: "No autenticado" });
   }
 
-  const secret = process.env.SUPABASE_JWT_SECRET;
-  if (!verifyHs256(token, secret)) {
-    return res.status(401).json({ error: "Token invalido" });
-  }
-
-  const payload = decodeJwtPayload(token);
+  const payload = verifySupabaseJwt(token, process.env.SUPABASE_JWT_SECRET);
   if (!payload?.sub) {
-    return res.status(401).json({ error: "Token invalido" });
+    return res.status(401).json({
+      error: "Token invalido. En Render usa SUPABASE_JWT_SECRET (JWT Secret de Supabase API), no la anon key.",
+    });
   }
 
   if (payload.exp && payload.exp * 1000 < Date.now()) {
     return res.status(401).json({ error: "Token expirado" });
   }
 
-  let appUser = await getAppUserById(payload.sub);
-  if (!appUser) {
-    appUser = {
-      id: payload.sub,
-      nombre: payload.email || "Usuario",
-      rol: "operador",
-    };
-  }
-
-  req.user = appUser;
+  const row = await getAppUserById(payload.sub);
+  req.user = {
+    id: payload.sub,
+    nombre: row?.nombre || payload.email || "Usuario",
+    rol: row?.rol || "operador",
+    email: payload.email,
+  };
   next();
 }
 

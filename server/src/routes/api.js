@@ -8,6 +8,7 @@ import {
   getSalesStats,
   getDashboardStats,
   getAllowedPhones,
+  getAppUserById,
 } from "../services/queries.js";
 import {
   createClient,
@@ -47,6 +48,16 @@ router.use((req, res, next) => {
     return next();
   }
   return authMiddleware(req, res, next);
+});
+
+router.get("/me", async (req, res) => {
+  const row = await getAppUserById(req.user.id);
+  res.json({
+    id: req.user.id,
+    nombre: row?.nombre || req.user.nombre,
+    rol: row?.rol || req.user.rol || "operador",
+    email: req.user.email,
+  });
 });
 
 router.get("/dashboard", async (req, res) => {
@@ -251,7 +262,8 @@ router.get("/whatsapp/diagnostic", async (_req, res) => {
     evolution_key_set: Boolean(process.env.EVOLUTION_API_KEY),
     evolution_instance_set: Boolean(process.env.EVOLUTION_INSTANCE),
     openai_set: Boolean(process.env.OPENAI_API_KEY),
-    auth_disabled: process.env.AUTH_DISABLED === "true" || !process.env.SUPABASE_JWT_SECRET,
+    jwt_secret_set: Boolean(process.env.SUPABASE_JWT_SECRET?.trim()),
+    auth_disabled: process.env.AUTH_DISABLED === "true",
     evolution: waCheck,
   });
 });

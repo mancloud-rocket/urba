@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
-import { setAuthToken } from "../lib/api";
+import { api, setAuthToken } from "../lib/api";
 
 const AuthContext = createContext(null);
 
@@ -9,16 +9,26 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const loadProfile = useCallback(async (user) => {
+  const syncProfile = useCallback(async (user, accessToken) => {
     if (!user) {
       setProfile(null);
       return;
     }
+    setAuthToken(accessToken);
+    let rol = user.user_metadata?.rol || "operador";
+    let nombre = user.user_metadata?.nombre || user.email?.split("@")[0] || "Usuario";
+    try {
+      const me = await api.me();
+      if (me?.rol) rol = me.rol;
+      if (me?.nombre) nombre = me.nombre;
+    } catch {
+      // API sin auth aun; se usa metadata o operador
+    }
     setProfile({
       id: user.id,
       email: user.email,
-      nombre: user.user_metadata?.nombre || user.email?.split("@")[0] || "Usuario",
-      rol: user.user_metadata?.rol || "operador",
+      nombre,
+      rol,
     });
   }, []);
 
@@ -30,32 +40,34 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       const s = data.session;
       setSession(s);
-      setAuthToken(s?.access_token || null);
-      loadProfile(s?.user ?? null);
+      await syncProfile(s?.user ?? null, s?.access_token);
       setLoading(false);
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, s) => {
       setSession(s);
-      setAuthToken(s?.access_token || null);
-      loadProfile(s?.user ?? null);
+      await syncProfile(s?.user ?? null, s?.access_token);
     });
 
     return () => sub.subscription.unsubscribe();
-  }, [loadProfile]);
+  }, [syncProfile]);
 
   async function signIn(email, password) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+    setSession(data.session);
+    await syncProfile(data.user, data.session?.access_token);
     return data;
   }
 
   async function signOut() {
     await supabase.auth.signOut();
     setAuthToken(null);
+    setSession(null);
+    setProfile(null);
   }
 
   return (

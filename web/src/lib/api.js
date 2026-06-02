@@ -1,14 +1,26 @@
+import { supabase, isSupabaseConfigured } from "./supabase";
+
 const BASE = import.meta.env.VITE_API_URL || "";
 
 let authToken = null;
 
 export function setAuthToken(token) {
-  authToken = token;
+  authToken = token || null;
+}
+
+async function resolveToken() {
+  if (authToken) return authToken;
+  if (isSupabaseConfigured() && supabase) {
+    const { data } = await supabase.auth.getSession();
+    authToken = data.session?.access_token || null;
+  }
+  return authToken;
 }
 
 async function request(path, options = {}) {
+  const token = await resolveToken();
   const headers = { "Content-Type": "application/json", ...options.headers };
-  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
   if (!res.ok) {
@@ -19,6 +31,7 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  me: () => request("/api/me"),
   dashboard: () => request("/api/dashboard"),
   clients: () => request("/api/clients"),
   client: (codigo) => request(`/api/clients/${codigo}`),
