@@ -43,6 +43,7 @@ import { getClientByCodigo } from "../services/queries.js";
 const router = express.Router();
 
 router.use((req, res, next) => {
+  if (req.method === "OPTIONS") return next();
   if (req.path.startsWith("/whatsapp")) return next();
   if (req.path === "/internal/expenses/check" && req.headers["x-cron-secret"] === process.env.CRON_SECRET) {
     return next();
@@ -263,6 +264,8 @@ router.get("/whatsapp/diagnostic", async (_req, res) => {
     evolution_instance_set: Boolean(process.env.EVOLUTION_INSTANCE),
     openai_set: Boolean(process.env.OPENAI_API_KEY),
     jwt_secret_set: Boolean(process.env.SUPABASE_JWT_SECRET?.trim()),
+    supabase_url_set: Boolean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL),
+    supabase_anon_set: Boolean(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY),
     auth_disabled: process.env.AUTH_DISABLED === "true",
     evolution: waCheck,
   });

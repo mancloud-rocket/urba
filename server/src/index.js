@@ -5,11 +5,13 @@ import api from "./routes/api.js";
 import { initDb, isPostgres, driver } from "./db.js";
 import { seedDatabase } from "./seed.js";
 import { log } from "./services/logger.js";
+import { corsOptions } from "./lib/cors-config.js";
 
 const app = express();
 const PORT = process.env.PORT || 8787;
 
-app.use(cors({ origin: true }));
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(express.json());
 
 app.use((req, res, next) => {
@@ -45,6 +47,13 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/api", api);
+
+app.use((err, _req, res, _next) => {
+  log.error("http", "unhandled_error", { error: err.message });
+  if (!res.headersSent) {
+    res.status(500).json({ error: "Error interno del servidor" });
+  }
+});
 
 async function start() {
   try {

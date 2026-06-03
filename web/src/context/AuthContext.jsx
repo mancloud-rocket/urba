@@ -9,7 +9,7 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const syncProfile = useCallback(async (user, accessToken) => {
+  const syncProfile = useCallback(async (user, accessToken, fetchMe = true) => {
     if (!user) {
       setProfile(null);
       return;
@@ -17,12 +17,14 @@ export function AuthProvider({ children }) {
     setAuthToken(accessToken);
     let rol = user.user_metadata?.rol || "operador";
     let nombre = user.user_metadata?.nombre || user.email?.split("@")[0] || "Usuario";
-    try {
-      const me = await api.me();
-      if (me?.rol) rol = me.rol;
-      if (me?.nombre) nombre = me.nombre;
-    } catch {
-      // API sin auth aun; se usa metadata o operador
+    if (fetchMe && accessToken) {
+      try {
+        const me = await api.me();
+        if (me?.rol) rol = me.rol;
+        if (me?.nombre) nombre = me.nombre;
+      } catch {
+        // Render sin auth configurado aun
+      }
     }
     setProfile({
       id: user.id,
@@ -47,9 +49,10 @@ export function AuthProvider({ children }) {
       setLoading(false);
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event, s) => {
       setSession(s);
-      await syncProfile(s?.user ?? null, s?.access_token);
+      const refetchMe = event === "SIGNED_IN" || event === "INITIAL_SESSION";
+      await syncProfile(s?.user ?? null, s?.access_token, refetchMe);
     });
 
     return () => sub.subscription.unsubscribe();
